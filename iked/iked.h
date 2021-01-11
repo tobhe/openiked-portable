@@ -45,7 +45,7 @@ struct ike_header {
 	uint8_t		 ike_flags;		/* Message options */
 	uint32_t	 ike_msgid;		/* Message identifier */
 	uint32_t	 ike_length;		/* Total message length */
-} __packed;
+};
 
 /*
  * Common daemon infrastructure, local imsg etc.
@@ -362,7 +362,7 @@ struct iked_sahdr {
 	uint64_t			 sh_ispi;	/* Initiator SPI */
 	uint64_t			 sh_rspi;	/* Responder SPI */
 	unsigned int			 sh_initiator;	/* Is initiator? */
-} __packed;
+};
 
 struct iked_kex {
 	struct ibuf			*kex_inonce;	/* Ni */

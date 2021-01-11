@@ -23,7 +23,7 @@ struct eap_header {
 	uint8_t		eap_code;
 	uint8_t		eap_id;
 	uint16_t	eap_length;
-} __packed;
+};
 
 struct eap_message {
 	uint8_t		eap_code;
@@ -31,7 +31,7 @@ struct eap_message {
 	uint16_t	eap_length;
 	uint8_t		eap_type;
 	/* Followed by type-specific data */
-} __packed;
+};
 
 #define EAP_CODE_REQUEST	1	/* Request */
 #define EAP_CODE_RESPONSE	2	/* Response */
@@ -115,7 +115,7 @@ extern struct iked_constmap eap_msopcode_map[];
 
 struct eap_mschap {
 	uint8_t				ms_opcode;
-} __packed;
+};
 
 struct eap_mschap_challenge {
 	uint8_t				msc_opcode;
@@ -124,7 +124,7 @@ struct eap_mschap_challenge {
 	uint8_t				msc_valuesize;
 	uint8_t				msc_challenge[EAP_MSCHAP_CHALLENGE_SZ];
 	/* Followed by variable-size name field */
-} __packed;
+};
 
 struct eap_mschap_peer {
 	uint8_t				msp_challenge[EAP_MSCHAP_CHALLENGE_SZ];
@@ -143,21 +143,21 @@ struct eap_mschap_response {
 		struct eap_mschap_peer	resp_peer;
 	}				msr_response;
 	/* Followed by variable-size name field */
-} __packed;
+};
 
 struct eap_mschap_success {
 	uint8_t				mss_opcode;
 	uint8_t				mss_id;
 	uint16_t			mss_length;
 	/* Followed by variable-size success message */
-} __packed;
+};
 
 struct eap_mschap_failure {
 	uint8_t				msf_opcode;
 	uint8_t				msf_id;
 	uint16_t			msf_length;
 	/* Followed by variable-size message field */
-} __packed;
+};
 
 #define EAP_MSERROR_RESTRICTED_LOGON_HOURS	646	/* eap-mschapv2 */
 #define EAP_MSERROR_ACCT_DISABLED		647	/* eap-mschapv2 */
