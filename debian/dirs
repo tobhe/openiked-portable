@@ -1,0 +1,9 @@
+etc/iked/ca
+etc/iked/certs
+etc/iked/crls
+etc/iked/private
+etc/iked/pubkeys/fqdn
+etc/iked/pubkeys/ipv4
+etc/iked/pubkeys/ipv6
+etc/iked/pubkeys/ufqdn
+var/lib/openiked/empty

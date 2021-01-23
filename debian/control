@@ -1,0 +1,29 @@
+Source: openiked
+Section: net
+Priority: optional
+Maintainer: Ryan Kavanagh <rak@debian.org>
+Build-Depends: bison,
+               cmake,
+               debhelper-compat (= 13),
+               libevent-dev,
+               libssl-dev,
+Standards-Version: 4.5.1
+Homepage: https://www.openiked.org/
+Vcs-Browser: https://salsa.debian.org/debian/openiked
+Vcs-Git: https://salsa.debian.org/debian/openiked.git -b debian/experimental
+Rules-Requires-Root: no
+
+Package: openiked
+Architecture: any
+Pre-Depends: ${misc:Pre-Depends},
+Depends: adduser,
+         openssl,
+         ${misc:Depends},
+         ${shlibs:Depends},
+Description: Internet Key Exchange (IKEv2) daemon
+ A free implementation of the Internet Key Exchange (IKEv2) protocol
+ which performs mutual authentication and which establishes and maintains
+ IPsec VPN security policies and associations (SAs) between peers. It is
+ intended to be a lean, clean, secure, better configurable and
+ interoperable implementation that focusses on supporting the main
+ standards and most important features of IKEv2.

@@ -1,0 +1,5 @@
+openiked (0.0.0~git20210123.2e52b4d-1) experimental; urgency=medium
+
+  * Initial release. (Closes: #980882)
+
+ -- Ryan Kavanagh <rak@debian.org>  Sat, 23 Jan 2021 20:40:59 -0500

@@ -1,0 +1,27 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in
+    purge)
+        # By debian Policy §6.5, we may only rely on essential packages and
+        # must fail gracefully if they are unavailable.
+        # Use userdel/groupdel from passwd instead of deluser/delgroup from
+        # the adduser package. This is because adduser depends on passwd,
+        # but is of lesser priority.
+        # Note that at the time of this writing, neither passwd nor adduser
+        # are essential packages.
+        userdel  _iked >/dev/null 2>&1 || true;
+        groupdel _iked >/dev/null 2>&1 || true;
+	;;
+
+    remove|failed-upgrade|abort-install|abort-upgrade|disappear|upgrade)
+	;;
+
+    *)
+	echo "postrm called with unknown argument \`$1'" >&2
+	exit 1
+	;;
+esac
+
+#DEBHELPER#
