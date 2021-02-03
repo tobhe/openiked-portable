@@ -1,4 +1,4 @@
-/*	$OpenBSD: iked.h,v 1.180 2021/01/21 16:46:47 tobhe Exp $	*/
+/*	$OpenBSD: iked.h,v 1.183 2021/02/01 16:37:48 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019-2021 Tobias Heider <tobhe@openbsd.org>
@@ -37,8 +37,6 @@
 /*
  * Common IKEv1/IKEv2 header
  */
-
-extern enum privsep_procid privsep_process;
 
 struct ike_header {
 	uint64_t	 ike_ispi;		/* Initiator cookie */
@@ -338,6 +336,7 @@ struct iked_dsa {
 	void		*dsa_key;	/* parsed public or private key */
 	int		 dsa_hmac;	/* HMAC or public/private key */
 	int		 dsa_sign;	/* Sign or verify operation */
+	uint32_t	 dsa_flags;	/* State flags */
 };
 
 struct iked_id {
@@ -851,7 +850,7 @@ int	 config_getcertpartialchain(struct iked *, struct imsg *);
 /* policy.c */
 void	 policy_init(struct iked *);
 int	 policy_lookup(struct iked *, struct iked_message *,
-	    struct iked_proposals *proposals);
+	    struct iked_proposals *, struct iked_flows *, int);
 int	 policy_lookup_sa(struct iked *, struct iked_sa *);
 struct iked_policy *
 	 policy_test(struct iked *, struct iked_policy *);

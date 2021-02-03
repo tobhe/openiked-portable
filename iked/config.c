@@ -19,8 +19,10 @@
 
 #include <sys/queue.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/uio.h>
 
+#include <netinet/in.h>
 #include <netinet/udp.h>
 
 #include <stdlib.h>
@@ -579,7 +581,11 @@ config_setsocket(struct iked *env, struct sockaddr_storage *ss,
 		return (-1);
 
 #if defined(UDP_ENCAP_ESPINUDP)
-	if (natt) {
+	if (natt
+#if !defined(HAVE_UDPENCAP6)
+	    && ss->ss_family != AF_INET6
+#endif
+	    ) {
 		int	 sopt;
 		sopt = UDP_ENCAP_ESPINUDP;
 		if (setsockopt(s, IPPROTO_UDP, UDP_ENCAP,
