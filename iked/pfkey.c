@@ -1,4 +1,4 @@
-/*	$OpenBSD: pfkey.c,v 1.76 2021/01/29 21:26:06 tobhe Exp $	*/
+/*	$OpenBSD: pfkey.c,v 1.77 2021/03/02 03:31:25 jsg Exp $	*/
 
 /*
  * Copyright (c) 2020-2021 Tobias Heider <tobhe@openbsd.org>
@@ -43,7 +43,7 @@
 #include "ikev2.h"
 
 #define ROUNDUP(x) (((x) + (PFKEYV2_CHUNK - 1)) & ~(PFKEYV2_CHUNK - 1))
-#define IOV_CNT 21
+#define IOV_CNT 27
 
 #define PFKEYV2_CHUNK sizeof(uint64_t)
 #define PFKEY_REPLY_TIMEOUT 1000
@@ -568,13 +568,15 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 
 	bzero(&sa_src, sizeof(sa_src));
 	sa_src.sadb_address_exttype = SADB_EXT_ADDRESS_SRC;
-	sa_src.sadb_address_proto = IPSEC_ULPROTO_ANY; //flow->flow_ipproto
+	sa_src.sadb_address_proto = flow->flow_ipproto ? flow->flow_ipproto
+	    : IPSEC_ULPROTO_ANY;
 	sa_src.sadb_address_prefixlen = smask;
 	sa_src.sadb_address_len = (sizeof(sa_src) + ROUNDUP(SS_LEN(ssrc))) / 8;
 
 	bzero(&sa_dst, sizeof(sa_dst));
 	sa_dst.sadb_address_exttype = SADB_EXT_ADDRESS_DST;
-	sa_dst.sadb_address_proto = IPSEC_ULPROTO_ANY; //flow->flow_ipproto;
+	sa_dst.sadb_address_proto = flow->flow_ipproto ? flow->flow_ipproto
+	    : IPSEC_ULPROTO_ANY;
 	sa_dst.sadb_address_prefixlen = dmask;
 	sa_dst.sadb_address_len = (sizeof(sa_dst) + ROUNDUP(SS_LEN(sdst))) / 8;
 
@@ -586,13 +588,14 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	bzero(&sa_ipsec, sizeof(sa_ipsec));
 	sa_ipsec.sadb_x_ipsecrequest_proto =
 	    satype == SADB_SATYPE_AH ? IPPROTO_AH : IPPROTO_ESP;
-	sa_ipsec.sadb_x_ipsecrequest_mode = IPSEC_MODE_TUNNEL;
+	sa_ipsec.sadb_x_ipsecrequest_mode = (flow->flow_transport) ?
+	    IPSEC_MODE_TRANSPORT : IPSEC_MODE_TUNNEL;
 	/* XXX: Always use IPSEC_LEVEL_REQUIRE */
-	sa_ipsec.sadb_x_ipsecrequest_level =
-	    flow->flow_dir == IPSEC_DIR_OUTBOUND ?
-	    IPSEC_LEVEL_REQUIRE : IPSEC_LEVEL_USE ;
+	sa_ipsec.sadb_x_ipsecrequest_level = IPSEC_LEVEL_REQUIRE;
 	sa_ipsec.sadb_x_ipsecrequest_len = sizeof(sa_ipsec);
-	sa_ipsec.sadb_x_ipsecrequest_len += ROUNDUP(SS_LEN(slocal) + SS_LEN(speer));
+	if (!flow->flow_transport)
+		sa_ipsec.sadb_x_ipsecrequest_len += ROUNDUP(SS_LEN(slocal) +
+		    SS_LEN(speer));
 	sa_policy.sadb_x_policy_len = (sizeof(sa_policy) +
 	    sa_ipsec.sadb_x_ipsecrequest_len) / 8;
 

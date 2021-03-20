@@ -1,6 +1,7 @@
-/*	$OpenBSD: policy.c,v 1.75 2021/02/01 16:37:48 tobhe Exp $	*/
+/*	$OpenBSD: policy.c,v 1.80 2021/03/15 22:32:44 tobhe Exp $	*/
 
 /*
+ * Copyright (c) 2020-2021 Tobias Heider <tobhe@openbsd.org>
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
  * Copyright (c) 2001 Daniel Hartmeier
  *
@@ -156,8 +157,8 @@ policy_lookup_sa(struct iked *env, struct iked_sa *sa)
 	pol.pol_af = sa->sa_peer.addr_af;
 	if (sa->sa_used_transport_mode)
 		pol.pol_flags |= IKED_POLICY_TRANSPORT;
-	memcpy(&pol.pol_peer.addr, &sa->sa_peer, sizeof(sa->sa_peer));
-	memcpy(&pol.pol_local.addr, &sa->sa_local, sizeof(sa->sa_local));
+	memcpy(&pol.pol_peer.addr, &sa->sa_peer.addr, sizeof(sa->sa_peer.addr));
+	memcpy(&pol.pol_local.addr, &sa->sa_local.addr, sizeof(sa->sa_local.addr));
 	pol.pol_flows = sa->sa_policy->pol_flows;
 	pol.pol_nflows = sa->sa_policy->pol_nflows;
 
@@ -669,6 +670,123 @@ sa_address(struct iked_sa *sa, struct iked_addr *addr, struct sockaddr *peer)
 	return (0);
 }
 
+int
+sa_configure_iface(struct iked *env, struct iked_sa *sa, int add)
+{
+#ifdef HAVE_VROUTE
+	struct iked_flow	*saflow;
+	struct iovec		 iov[4];
+	int			 iovcnt;
+	struct sockaddr		*caddr;
+	struct sockaddr_in	*addr;
+	struct sockaddr_in	 mask;
+	struct sockaddr_in6	*addr6;
+	struct sockaddr_in6	 mask6;
+	int			 rdomain;
+
+	if (sa->sa_policy == NULL || sa->sa_policy->pol_iface == 0)
+		return (0);
+
+	if (sa->sa_cp_addr) {
+		iovcnt = 0;
+		addr = (struct sockaddr_in *)&sa->sa_cp_addr->addr;
+		iov[0].iov_base = addr;
+		iov[0].iov_len = sizeof(*addr);
+		iovcnt++;
+
+		bzero(&mask, sizeof(mask));
+		mask.sin_addr.s_addr =
+		    prefixlen2mask(sa->sa_cp_addr->addr_mask ?
+		    sa->sa_cp_addr->addr_mask : 32);
+		mask.sin_family = AF_INET;
+		mask.sin_len = sizeof(mask);
+		iov[1].iov_base = &mask;
+		iov[1].iov_len = sizeof(mask);
+		iovcnt++;
+
+		iov[2].iov_base = &sa->sa_policy->pol_iface;
+		iov[2].iov_len = sizeof(sa->sa_policy->pol_iface);
+		iovcnt++;
+
+		if(proc_composev(&env->sc_ps, PROC_PARENT,
+		    add ? IMSG_IF_ADDADDR : IMSG_IF_DELADDR,
+		    iov, iovcnt))
+			return (-1);
+	}
+	if (sa->sa_cp_addr6) {
+		iovcnt = 0;
+		addr6 = (struct sockaddr_in6 *)&sa->sa_cp_addr6->addr;
+		iov[0].iov_base = addr6;
+		iov[0].iov_len = sizeof(*addr6);
+		iovcnt++;
+
+		bzero(&mask6, sizeof(mask6));
+		prefixlen2mask6(sa->sa_cp_addr6->addr_mask ?
+		    sa->sa_cp_addr6->addr_mask : 128,
+		    (uint32_t *)&mask6.sin6_addr.s6_addr);
+		mask6.sin6_family = AF_INET6;
+		mask6.sin6_len = sizeof(mask6);
+		iov[1].iov_base = &mask6;
+		iov[1].iov_len = sizeof(mask6);
+		iovcnt++;
+
+		iov[2].iov_base = &sa->sa_policy->pol_iface;
+		iov[2].iov_len = sizeof(sa->sa_policy->pol_iface);
+		iovcnt++;
+
+		if(proc_composev(&env->sc_ps, PROC_PARENT,
+		    add ? IMSG_IF_ADDADDR : IMSG_IF_DELADDR,
+		    iov, iovcnt))
+			return (-1);
+	}
+
+	if (add) {
+		/* Add direct route to peer */
+		if (vroute_setcloneroute(env, getrtable(),
+		    (struct sockaddr *)&sa->sa_peer.addr, 0, NULL))
+			return (-1);
+	} else {
+		if (vroute_setdelroute(env, getrtable(),
+		    (struct sockaddr *)&sa->sa_peer.addr,
+		    0, NULL))
+			return (-1);
+	}
+
+	TAILQ_FOREACH(saflow, &sa->sa_flows, flow_entry) {
+		rdomain = saflow->flow_rdomain == -1 ?
+		    getrtable() : saflow->flow_rdomain;
+
+		switch(saflow->flow_src.addr_af) {
+		case AF_INET:
+			caddr = (struct sockaddr *)&sa->sa_cp_addr->addr;
+			break;
+		case AF_INET6:
+			caddr = (struct sockaddr *)&sa->sa_cp_addr6->addr;
+			break;
+		default:
+			return (-1);
+		}
+		if (sockaddr_cmp((struct sockaddr *)&saflow->flow_src.addr,
+		    caddr, -1) != 0)
+			continue;
+
+		if (add) {
+			if (vroute_setaddroute(env, rdomain,
+			    (struct sockaddr *)&saflow->flow_dst.addr,
+			    saflow->flow_dst.addr_mask, caddr))
+				return (-1);
+		} else {
+			if (vroute_setdelroute(env, rdomain,
+			    (struct sockaddr *)&saflow->flow_dst.addr,
+			    saflow->flow_dst.addr_mask, caddr))
+				return (-1);
+		}
+	}
+#endif
+
+	return (0);
+}
+
 void
 childsa_free(struct iked_childsa *csa)
 {
@@ -974,7 +1092,7 @@ proposals_match(struct iked_proposal *local, struct iked_proposal *peer,
     struct iked_transform **xforms, int rekey)
 {
 	struct iked_transform	*tpeer, *tlocal;
-	unsigned int		 i, j, type, score, requiredh = 0, noauth = 0;
+	unsigned int		 i, j, type, score, requiredh = 0, nodh = 0, noauth = 0;
 	uint8_t			 protoid = peer->prop_protoid;
 	uint8_t			 peerxfs[IKEV2_XFORMTYPE_MAX];
 
@@ -1011,8 +1129,19 @@ proposals_match(struct iked_proposal *local, struct iked_proposal *peer,
 			 */
 			if (rekey && requiredh == 0 &&
 			    protoid == IKEV2_SAPROTO_ESP &&
-			    tlocal->xform_type == IKEV2_XFORMTYPE_DH)
+			    tlocal->xform_type == IKEV2_XFORMTYPE_DH &&
+			    tlocal->xform_id != IKEV2_XFORMDH_NONE)
 				requiredh = 1;
+
+			/*
+			 * If none is an explicit option, don't require
+			 * DH group. Overrides requiredh = 1.
+			 */
+			if (rekey && nodh == 0 &&
+			    protoid == IKEV2_SAPROTO_ESP &&
+			    tlocal->xform_type == IKEV2_XFORMTYPE_DH &&
+			    tlocal->xform_id == IKEV2_XFORMDH_NONE)
+				nodh = 1;
 
 			/* Compare peer and local proposals */
 			if (tpeer->xform_type != tlocal->xform_type ||
@@ -1052,7 +1181,7 @@ proposals_match(struct iked_proposal *local, struct iked_proposal *peer,
 			break;
 		} else if (protoid == IKEV2_SAPROTO_ESP && xforms[i] == NULL &&
 		    (i == IKEV2_XFORMTYPE_ENCR || i == IKEV2_XFORMTYPE_ESN ||
-		    (requiredh && i == IKEV2_XFORMTYPE_DH))) {
+		    (requiredh && !nodh && i == IKEV2_XFORMTYPE_DH))) {
 			score = 0;
 			break;
 		} else if (peerxfs[i] && xforms[i] == NULL) {

@@ -1,4 +1,4 @@
-/*	$OpenBSD: iked.h,v 1.183 2021/02/01 16:37:48 tobhe Exp $	*/
+/*	$OpenBSD: iked.h,v 1.189 2021/03/05 22:26:04 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019-2021 Tobias Heider <tobhe@openbsd.org>
@@ -155,6 +155,7 @@ struct iked_flow {
 	unsigned int			 flow_dir;	/* in/out */
 	int				 flow_rdomain;
 	struct iked_addr		 flow_prenat;
+	int				 flow_fixed;
 
 	unsigned int			 flow_loaded;	/* pfkey done */
 
@@ -164,6 +165,8 @@ struct iked_flow {
 	struct iked_addr		*flow_local;	/* outer source */
 	struct iked_addr		*flow_peer;	/* outer dest */
 	struct iked_sa			*flow_ikesa;	/* parent SA */
+
+	int				 flow_transport;
 
 	RB_ENTRY(iked_flow)		 flow_node;
 	TAILQ_ENTRY(iked_flow)		 flow_entry;
@@ -198,6 +201,8 @@ struct iked_childsa {
 	struct iked_childsa		*csa_peersa;	/* peer */
 
 	struct iked_childsa		*csa_bundled;	/* IPCOMP */
+
+	uint16_t			 csa_pfsgrpid;	/* pfs group id */
 
 	RB_ENTRY(iked_childsa)		 csa_node;
 	TAILQ_ENTRY(iked_childsa)	 csa_entry;
@@ -238,6 +243,7 @@ struct iked_lifetime {
 struct iked_policy {
 	unsigned int			 pol_id;
 	char				 pol_name[IKED_ID_SIZE];
+	unsigned int			 pol_iface;
 
 #define IKED_SKIP_FLAGS			 0
 #define IKED_SKIP_AF			 1
@@ -753,6 +759,7 @@ struct iked {
 	struct event			 sc_pfkeyev;
 	uint8_t				 sc_certreqtype;
 	struct ibuf			*sc_certreq;
+	void				*sc_vroute;
 
 	struct iked_socket		*sc_sock4[2];
 	struct iked_socket		*sc_sock6[2];
@@ -779,6 +786,33 @@ struct iked_socket {
 	struct event		 sock_ev;
 	struct iked		*sock_env;
 	struct sockaddr_storage	 sock_addr;
+};
+
+struct ipsec_xf {
+	const char	*name;
+	unsigned int	 id;
+	unsigned int	 length;
+	unsigned int	 keylength;
+	unsigned int	 nonce;
+	unsigned int	 noauth;
+};
+
+struct ipsec_transforms {
+	const struct ipsec_xf	**authxf;
+	unsigned int		  nauthxf;
+	const struct ipsec_xf	**prfxf;
+	unsigned int		  nprfxf;
+	const struct ipsec_xf	**encxf;
+	unsigned int		  nencxf;
+	const struct ipsec_xf	**groupxf;
+	unsigned int		  ngroupxf;
+	const struct ipsec_xf	**esnxf;
+	unsigned int		  nesnxf;
+};
+
+struct ipsec_mode {
+	struct ipsec_transforms	**xfs;
+	unsigned int		  nxfs;
 };
 
 /* iked.c */
@@ -832,7 +866,7 @@ int	 config_setsocket(struct iked *, struct sockaddr_storage *, in_port_t,
 	    enum privsep_procid, int);
 int	 config_getsocket(struct iked *env, struct imsg *,
 	    void (*cb)(int, short, void *));
-int	 config_setpfkey(struct iked *, enum privsep_procid);
+int	 config_setpfkey(struct iked *);
 int	 config_getpfkey(struct iked *, struct imsg *);
 int	 config_setuser(struct iked *, struct iked_user *, enum privsep_procid);
 int	 config_getuser(struct iked *, struct imsg *);
@@ -866,6 +900,7 @@ struct iked_sa *
 	    struct iked_policy *);
 void	 sa_free(struct iked *, struct iked_sa *);
 void	 sa_free_flows(struct iked *, struct iked_saflows *);
+int	 sa_configure_iface(struct iked *, struct iked_sa *, int);
 int	 sa_address(struct iked_sa *, struct iked_addr *, struct sockaddr *);
 void	 childsa_free(struct iked_childsa *);
 struct iked_childsa *
@@ -906,17 +941,17 @@ size_t	 hash_length(struct iked_hash *);
 struct iked_cipher *
 	 cipher_new(uint8_t, uint16_t, uint16_t);
 struct ibuf *
-	 cipher_setkey(struct iked_cipher *, void *, size_t);
+	 cipher_setkey(struct iked_cipher *, const void *, size_t);
 struct ibuf *
-	 cipher_setiv(struct iked_cipher *, void *, size_t);
+	 cipher_setiv(struct iked_cipher *, const void *, size_t);
 int	 cipher_settag(struct iked_cipher *, uint8_t *, size_t);
 int	 cipher_gettag(struct iked_cipher *, uint8_t *, size_t);
 void	 cipher_free(struct iked_cipher *);
 int	 cipher_init(struct iked_cipher *, int);
 int	 cipher_init_encrypt(struct iked_cipher *);
 int	 cipher_init_decrypt(struct iked_cipher *);
-void	 cipher_aad(struct iked_cipher *, void *, size_t, size_t *);
-int	 cipher_update(struct iked_cipher *, void *, size_t, void *, size_t *);
+void	 cipher_aad(struct iked_cipher *, const void *, size_t, size_t *);
+int	 cipher_update(struct iked_cipher *, const void *, size_t, void *, size_t *);
 int	 cipher_final(struct iked_cipher *);
 size_t	 cipher_length(struct iked_cipher *);
 size_t	 cipher_keylength(struct iked_cipher *);
@@ -938,6 +973,18 @@ size_t	 dsa_length(struct iked_dsa *);
 int	 dsa_update(struct iked_dsa *, const void *, size_t);
 ssize_t	 dsa_sign_final(struct iked_dsa *, void *, size_t);
 ssize_t	 dsa_verify_final(struct iked_dsa *, void *, size_t);
+
+/* vroute.c */
+void vroute_init(struct iked *);
+int vroute_getaddr(struct iked *, struct imsg *);
+int vroute_setaddroute(struct iked *, uint8_t, struct sockaddr *,
+    uint8_t, struct sockaddr *);
+int vroute_setcloneroute(struct iked *, uint8_t, struct sockaddr *,
+    uint8_t, struct sockaddr *);
+int vroute_setdelroute(struct iked *, uint8_t, struct sockaddr *,
+    uint8_t, struct sockaddr *);
+int vroute_getroute(struct iked *, struct imsg *);
+int vroute_getcloneroute(struct iked *, struct imsg *);
 
 /* ikev2.c */
 pid_t	 ikev2(struct privsep *, struct privsep_proc *);
@@ -1219,11 +1266,24 @@ int	 ocsp_validate_cert(struct iked *, void *, size_t, struct iked_sahdr,
 
 /* parse.y */
 int	 parse_config(const char *, struct iked *);
-void	 print_user(struct iked_user *);
-void	 print_policy(struct iked_policy *);
+int	 cmdline_symset(char *);
+extern const struct ipsec_xf authxfs[];
+extern const struct ipsec_xf prfxfs[];
+extern const struct ipsec_xf *encxfs;
+extern const struct ipsec_xf ikeencxfs[];
+extern const struct ipsec_xf ipsecencxfs[];
+extern const struct ipsec_xf groupxfs[];
+extern const struct ipsec_xf esnxfs[];
+extern const struct ipsec_xf methodxfs[];
+extern const struct ipsec_xf saxfs[];
+extern const struct ipsec_xf cpxfs[];
 size_t	 keylength_xf(unsigned int, unsigned int, unsigned int);
 size_t	 noncelength_xf(unsigned int, unsigned int);
-int	 cmdline_symset(char *);
 int	 encxf_noauth(unsigned int);
+
+/* print.c */
+void	 print_user(struct iked_user *);
+void	 print_policy(struct iked_policy *);
+const char *print_xf(unsigned int, unsigned int, const struct ipsec_xf *);
 
 #endif /* IKED_H */
