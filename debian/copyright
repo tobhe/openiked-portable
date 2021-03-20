@@ -32,8 +32,8 @@ Copyright: 2021 Ryan Kavanagh <rak@debian.org>
 License: ISC
 
 Files: iked/chap_ms.c
-       iked/compat/getopt.h
-       iked/compat/getopt_long.c
+       compat/getopt.h
+       compat/getopt_long.c
        regress/dh/dhtest.c
 Copyright: 1995      Eric Rosenquist
            1997      Gabor Kincses <gabor@acm.org>
@@ -44,16 +44,19 @@ Copyright: 1995      Eric Rosenquist
            2020-2021 Tobias Heider <tobhe@openbsd.org>
 License: BSD-2-clause
 
-Files: iked/compat/tree.h
-       iked/compat/sys/tree.h
+Files: compat/tree.h
+       compat/sys/tree.h
 Copyright: 2002 Niels Provos <provos@citi.umich.edu>
 	   2016 David Gwynne <dlg@openbsd.org>
 License: BSD-2-clause and ISC
 
-Files: iked/compat/net/ethertypes.h
-       iked/compat/net/if_arp.h
-       iked/compat/vis.h
+Files: compat/setproctitle.c
+       compat/net/ethertypes.h
+       compat/net/if_arp.h
+       compat/vis.h
 Copyright: 1982-1993 The Regents of the University of California.
+           2003      Damien Miller
+           1983-1997 Eric P. Allman
 License: BSD-3-clause
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions
@@ -79,9 +82,9 @@ License: BSD-3-clause
  OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  SUCH DAMAGE.
 
-Files: iked/compat/netinet/ip6.h
-       iked/compat/netinet/ip_var.h
-       iked/compat/netinet/ip.h
+Files: compat/netinet/ip6.h
+       compat/netinet/ip_var.h
+       compat/netinet/ip.h
 Copyright: 1982-1993 The Regents of the University of California
            1995-1998 WIDE Project
 License: BSD-3-clause
