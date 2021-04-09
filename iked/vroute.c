@@ -1,4 +1,4 @@
-/*	$OpenBSD: vroute.c,v 1.6 2021/02/28 19:25:59 tobhe Exp $	*/
+/*	$OpenBSD: vroute.c,v 1.7 2021/03/25 01:39:09 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2021 Tobias Heider <tobhe@openbsd.org>
@@ -37,15 +37,14 @@
 
 #define IKED_VROUTE_PRIO	6
 
-#define ROUNDUP(a)			\
-    (((a) & (sizeof(long) - 1)) ? (1 + ((a) | (sizeof(long) - 1))) : (a))
+#define ROUNDUP(a) (a>0 ? (1 + (((a) - 1) | (sizeof(long) - 1))) : sizeof(long))
 
 int vroute_setroute(struct iked *, uint8_t, struct sockaddr *, uint8_t,
     struct sockaddr *, int);
 int vroute_doroute(struct iked *, int, int, int, uint8_t, struct sockaddr *,
     struct sockaddr *, struct sockaddr *, int *);
 int vroute_doaddr(struct iked *, char *, struct sockaddr *, struct sockaddr *, int);
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined (__NetBSD__)
 static int vroute_dodefaultroute(struct iked *, int, int, uint8_t,
     struct sockaddr *);
 #endif
@@ -114,6 +113,8 @@ vroute_getaddr(struct iked *env, struct imsg *imsg)
 	ptr += addr->sa_len;
 	left -= addr->sa_len;
 
+	if (left < sizeof(*mask))
+		fatalx("bad length imsg received");
 	mask = (struct sockaddr *) ptr;
 	if (mask->sa_family != af)
 		return (-1);
@@ -277,7 +278,7 @@ vroute_getroute(struct iked *env, struct imsg *imsg)
 		break;
 	}
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined (__NetBSD__)
 	if (mask && mask2prefixlen(mask) == 0) {
 		return (vroute_dodefaultroute(env, flags, addrs, type, gateway));
 	}
@@ -431,7 +432,7 @@ vroute_doroute(struct iked *env, int flags, int addrs, int rdomain, uint8_t type
 	return (0);
 }
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || defined (__NetBSD__)
 static int
 vroute_dodefaultroute(struct iked *env, int flags, int addrs, uint8_t type,
     struct sockaddr *gateway)
