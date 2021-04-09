@@ -1,3 +1,9 @@
+openiked (0.0.0~git20210409.9ff0f77-1) experimental; urgency=medium
+
+  * New upstream release
+
+ -- Ryan Kavanagh <rak@debian.org>  Fri, 09 Apr 2021 10:47:48 -0400
+
 openiked (0.0.0~git20210320.2bbd41e-1) experimental; urgency=medium
 
   * New upstream release
