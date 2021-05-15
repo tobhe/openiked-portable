@@ -58,8 +58,10 @@ ibuf_new(const void *data, size_t len)
 		return (NULL);
 
 	ibuf_zero(buf);
+	if (len == 0)
+		return (buf);
 
-	if (data == NULL && len) {
+	if (data == NULL) {
 		if (ibuf_advance(buf, len) == NULL) {
 			ibuf_free(buf);
 			return (NULL);
