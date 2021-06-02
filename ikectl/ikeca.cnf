@@ -14,6 +14,7 @@ CERTUSAGE		= digitalSignature,keyCertSign,cRLSign
 EXTCERTUSAGE		= serverAuth,clientAuth
 CERTIP			= 0.0.0.0
 CERTFQDN		= nohost.nodomain
+CERTEMAIL		= noone@nohost.nodomain
 CADB			= index.txt
 CASERIAL		= serial.txt
 NSCERTTYPE		= server,client
@@ -78,6 +79,12 @@ keyUsage=$ENV::CERTUSAGE
 keyUsage=$ENV::CERTUSAGE
 nsCertType=$ENV::NSCERTTYPE
 subjectAltName=IP:$ENV::CERTIP
+extendedKeyUsage=$ENV::EXTCERTUSAGE
+
+[x509v3_EMAIL]
+keyUsage=$ENV::CERTUSAGE
+nsCertType=$ENV::NSCERTTYPE
+subjectAltName=email:$ENV::CERTEMAIL
 extendedKeyUsage=$ENV::EXTCERTUSAGE
 
 [x509v3_FQDN]

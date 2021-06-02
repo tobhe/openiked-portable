@@ -273,22 +273,18 @@ parse(int argc, char *argv[])
 }
 
 int
-parse_addr(const char *word)
+parse_addr(const char *string)
 {
-	struct addrinfo hints, *r;
+	struct in6_addr ia;
 
-	bzero(&hints, sizeof(hints));
-	hints.ai_socktype = SOCK_DGRAM; /* dummy */
-	hints.ai_family = PF_UNSPEC;
-	hints.ai_flags = AI_NUMERICHOST;
-	if (getaddrinfo(word, "0", &hints, &r) == 0) {
-		freeaddrinfo(r);
-		return (0);
-	}
-
-	return (1);
+	if ((inet_pton(AF_INET, string, &ia) == 1) ||
+	    (inet_pton(AF_INET6, string, &ia) == 1))
+		return (HOST_IPADDR);
+	else if (strchr(string, '@'))
+		return (HOST_EMAIL);
+	else
+		return (HOST_FQDN);
 }
-
 
 const struct token *
 match_token(char *word, const struct token table[])
@@ -338,10 +334,7 @@ match_token(char *word, const struct token table[])
 		case FQDN:
 			if (!match && word != NULL && strlen(word) > 0) {
 				res.host = strdup(word);
-				if (parse_addr(word) == 0)
-					res.htype = HOST_IPADDR;
-				else
-					res.htype = HOST_FQDN;
+				res.htype = parse_addr(word);
 				match++;
 				t = &table[i];
 			}

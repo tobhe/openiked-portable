@@ -91,6 +91,7 @@ struct {
 char *ca_env[][2] = {
 	{ "$ENV::CADB", NULL },
 	{ "$ENV::CASERIAL", NULL },
+	{ "$ENV::CERTEMAIL", NULL },
 	{ "$ENV::CERTFQDN", NULL },
 	{ "$ENV::CERTIP", NULL },
 	{ "$ENV::CERTPATHLEN", NULL },
@@ -235,6 +236,9 @@ ca_request(struct ca *ca, char *keyname, int type)
 	if (type == HOST_IPADDR) {
 		ca_setenv("$ENV::CERTIP", name);
 		ca_setenv("$ENV::REQ_EXT", "x509v3_IPAddr");
+	} else if (type == HOST_EMAIL) {
+		ca_setenv("$ENV::CERTEMAIL", name);
+		ca_setenv("$ENV::REQ_EXT", "x509v3_EMAIL");
 	} else if (type == HOST_FQDN) {
 		if (!strcmp(keyname, "local")) {
 			if (gethostname(hostname, sizeof(hostname)))
@@ -276,6 +280,8 @@ ca_sign(struct ca *ca, char *keyname, int type)
 
 	if (type == HOST_IPADDR) {
 		extensions = "x509v3_IPAddr";
+	} else if (type == HOST_EMAIL) {
+		extensions = "x509v3_EMAIL";
 	} else if (type == HOST_FQDN) {
 		extensions = "x509v3_FQDN";
 	} else {

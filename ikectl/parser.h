@@ -74,6 +74,7 @@ struct parse_result {
 
 #define HOST_IPADDR	1
 #define HOST_FQDN	2
+#define HOST_EMAIL	3
 
 struct parse_result	*parse(int, char *[]);
 
