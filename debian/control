@@ -7,7 +7,7 @@ Build-Depends: bison,
                debhelper-compat (= 13),
                libevent-dev,
                libssl-dev,
-Standards-Version: 4.5.1
+Standards-Version: 4.6.0
 Homepage: https://www.openiked.org/
 Vcs-Browser: https://salsa.debian.org/debian/openiked
 Vcs-Git: https://salsa.debian.org/debian/openiked.git -b debian/unstable
