@@ -1,3 +1,10 @@
+openiked (6.9.0-2) unstable; urgency=medium
+
+  * Bump standards version to 4.6.0
+  * Delete files under /etc/iked created by openiked on purge
+
+ -- Ryan Kavanagh <rak@debian.org>  Sat, 18 Sep 2021 21:27:42 -0400
+
 openiked (6.9.0-1) unstable; urgency=medium
 
   * New upstream release
