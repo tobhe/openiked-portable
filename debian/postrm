@@ -13,7 +13,19 @@ case "$1" in
         # are essential packages.
         userdel  _iked >/dev/null 2>&1 || true;
         groupdel _iked >/dev/null 2>&1 || true;
-	;;
+        # The following files get left behind unless we manually delete them:
+        #      /etc/iked/
+        #      /etc/iked/local.pub
+        #      /etc/iked/private/
+        #      /etc/iked/private/local.key
+        # The user may have created other files under these directories.
+        # As a result, we only attempt to delete the files that we know
+        # openiked created.
+        rm    /etc/iked/private/local.key || true
+        rmdir /etc/iked/private           || true
+        rm    /etc/iked/local.pub         || true
+        rmdir /etc/iked                   || true
+        ;;
 
     remove|failed-upgrade|abort-install|abort-upgrade|disappear|upgrade)
 	;;
