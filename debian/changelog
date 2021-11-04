@@ -1,3 +1,10 @@
+openiked (7.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update watch file to point to tarballs on FTP mirror
+
+ -- Ryan Kavanagh <rak@debian.org>  Thu, 04 Nov 2021 12:32:35 -0400
+
 openiked (6.9.0-2) unstable; urgency=medium
 
   * Bump standards version to 4.6.0
