@@ -1,4 +1,5 @@
 # Compulsory line, this is a version 4 file
 version=4
 
-# There are no upstream tarballs yet
+opts="pgpmode=auto" \
+    https://ftp.openbsd.org/pub/OpenBSD/OpenIKED/openiked-(\d[\d.]*)\.tar\.gz
