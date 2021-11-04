@@ -1,4 +1,4 @@
-/*	$OpenBSD: proc.c,v 1.34 2021/01/28 01:20:37 mortimer Exp $	*/
+/*	$OpenBSD: proc.c,v 1.35 2021/04/20 21:11:56 dv Exp $	*/
 
 /*
  * Copyright (c) 2010 - 2014 Reyk Floeter <reyk@openbsd.org>
@@ -180,11 +180,16 @@ proc_open(struct privsep *ps, struct privsep_proc *p,
 				if (pa->pp_pipes[procs[proc].p_id][j] != -1)
 					continue;
 
+#if defined(__APPLE__)
+				if (socketpair(AF_UNIX, SOCK_STREAM,
+				    PF_UNSPEC, fds) == -1)
+					fatal("socketpair");
+#else
 				if (socketpair(AF_UNIX,
 				    SOCK_STREAM | SOCK_NONBLOCK,
 				    PF_UNSPEC, fds) == -1)
 					fatal("socketpair");
-
+#endif
 				pa->pp_pipes[procs[proc].p_id][j] = fds[0];
 				pb->pp_pipes[src][i] = fds[1];
 			}
@@ -435,7 +440,6 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	proc_listen(ps, procs, nproc);
 
 	if (p->p_id == PROC_CONTROL && ps->ps_instance == 0) {
-		TAILQ_INIT(&ctl_conns);
 		if (control_listen(&ps->ps_csock) == -1)
 			fatalx(__func__);
 		TAILQ_FOREACH(rcs, &ps->ps_rcsocks, cs_entry)

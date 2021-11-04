@@ -1,4 +1,4 @@
-/*	$OpenBSD: types.h,v 1.42 2021/02/13 16:14:12 tobhe Exp $	*/
+/*	$OpenBSD: types.h,v 1.45 2021/09/01 15:30:06 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019 Tobias Heider <tobias.heider@stusta.de>
@@ -67,7 +67,7 @@
 #define IKED_CYCLE_BUFFERS	8	/* # of static buffers for mapping */
 #define IKED_PASSWORD_SIZE	256	/* limited by most EAP types */
 
-#define IKED_LIFETIME_BYTES	536870912 /* 512 Mb */
+#define IKED_LIFETIME_BYTES	4294967296 /* 4 GB */
 #define IKED_LIFETIME_SECONDS	10800	  /* 3 hours */
 
 #define IKED_E			0x1000	/* Decrypted flag */
@@ -100,7 +100,6 @@ enum imsg_type {
 	IMSG_CTL_ACTIVE,
 	IMSG_CTL_PASSIVE,
 	IMSG_CTL_RESET_ID,
-	IMSG_CTL_EXIT,
 	IMSG_CTL_SHOW_SA,
 	IMSG_CTL_STATIC,
 	IMSG_COMPILE,
@@ -120,6 +119,8 @@ enum imsg_type {
 	IMSG_VROUTE_ADD,
 	IMSG_VROUTE_DEL,
 	IMSG_VROUTE_CLONE,
+	IMSG_VDNS_ADD,
+	IMSG_VDNS_DEL,
 	IMSG_OCSP_FD,
 	IMSG_OCSP_CFG,
 	IMSG_AUTH,
@@ -142,7 +143,6 @@ enum flushmode {
 	RESET_POLICY,
 	RESET_SA,
 	RESET_USER,
-	RESET_EXIT
 };
 
 #ifndef nitems

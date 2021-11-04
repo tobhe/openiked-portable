@@ -1,4 +1,4 @@
-/*	$OpenBSD: policy.c,v 1.80 2021/03/15 22:32:44 tobhe Exp $	*/
+/*	$OpenBSD: policy.c,v 1.84 2021/10/12 10:01:59 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2020-2021 Tobias Heider <tobhe@openbsd.org>
@@ -53,7 +53,7 @@ static __inline int
 
 static int	policy_test_flows(struct iked_policy *, struct iked_policy *);
 static int	proposals_match(struct iked_proposal *, struct iked_proposal *,
-		    struct iked_transform **, int);
+		    struct iked_transform **, int, int);
 
 void
 policy_init(struct iked *env)
@@ -276,7 +276,7 @@ policy_test(struct iked *env, struct iked_policy *key)
 			/* Make sure the proposals are compatible */
 			if (TAILQ_FIRST(&key->pol_proposals) &&
 			    proposals_negotiate(NULL, &p->pol_proposals,
-			    &key->pol_proposals, 0) == -1) {
+			    &key->pol_proposals, 0, -1) == -1) {
 				p = TAILQ_NEXT(p, pol_entry);
 				continue;
 			}
@@ -674,12 +674,6 @@ int
 sa_configure_iface(struct iked *env, struct iked_sa *sa, int add)
 {
 #if defined(HAVE_VROUTE) || defined(HAVE_VROUTE_NETLINK)
-	struct iovec		 iov[4];
-	int			 iovcnt;
-	struct sockaddr_in	*addr;
-	struct sockaddr_in	 mask;
-	struct sockaddr_in6	*addr6;
-	struct sockaddr_in6	 mask6;
 	struct iked_flow	*saflow;
 	struct sockaddr		*caddr;
 	int			 rdomain;
@@ -687,60 +681,19 @@ sa_configure_iface(struct iked *env, struct iked_sa *sa, int add)
 	if (sa->sa_policy == NULL || sa->sa_policy->pol_iface == 0)
 		return (0);
 
+	if (!sa->sa_cp_addr && !sa->sa_cp_addr6)
+		return (0);
+
 	if (sa->sa_cp_addr) {
-		iovcnt = 0;
-		addr = (struct sockaddr_in *)&sa->sa_cp_addr->addr;
-		iov[0].iov_base = addr;
-		iov[0].iov_len = sizeof(*addr);
-		iovcnt++;
-
-		bzero(&mask, sizeof(mask));
-		mask.sin_addr.s_addr =
-		    prefixlen2mask(sa->sa_cp_addr->addr_mask ?
-		    sa->sa_cp_addr->addr_mask : 32);
-		mask.sin_family = AF_INET;
-#ifdef HAVE_SOCKADDR_SA_LEN
-		mask.sin_len = sizeof(mask);
-#endif
-		iov[1].iov_base = &mask;
-		iov[1].iov_len = sizeof(mask);
-		iovcnt++;
-
-		iov[2].iov_base = &sa->sa_policy->pol_iface;
-		iov[2].iov_len = sizeof(sa->sa_policy->pol_iface);
-		iovcnt++;
-
-		if(proc_composev(&env->sc_ps, PROC_PARENT,
-		    add ? IMSG_IF_ADDADDR : IMSG_IF_DELADDR,
-		    iov, iovcnt))
+		if (vroute_setaddr(env, add,
+		    (struct sockaddr *)&sa->sa_cp_addr->addr,
+		    sa->sa_cp_addr->addr_mask, sa->sa_policy->pol_iface) != 0)
 			return (-1);
 	}
 	if (sa->sa_cp_addr6) {
-		iovcnt = 0;
-		addr6 = (struct sockaddr_in6 *)&sa->sa_cp_addr6->addr;
-		iov[0].iov_base = addr6;
-		iov[0].iov_len = sizeof(*addr6);
-		iovcnt++;
-
-		bzero(&mask6, sizeof(mask6));
-		prefixlen2mask6(sa->sa_cp_addr6->addr_mask ?
-		    sa->sa_cp_addr6->addr_mask : 128,
-		    (uint32_t *)&mask6.sin6_addr.s6_addr);
-		mask6.sin6_family = AF_INET6;
-#ifdef HAVE_SOCKADDR_SA_LEN
-		mask6.sin6_len = sizeof(mask6);
-#endif
-		iov[1].iov_base = &mask6;
-		iov[1].iov_len = sizeof(mask6);
-		iovcnt++;
-
-		iov[2].iov_base = &sa->sa_policy->pol_iface;
-		iov[2].iov_len = sizeof(sa->sa_policy->pol_iface);
-		iovcnt++;
-
-		if(proc_composev(&env->sc_ps, PROC_PARENT,
-		    add ? IMSG_IF_ADDADDR : IMSG_IF_DELADDR,
-		    iov, iovcnt))
+		if (vroute_setaddr(env, add,
+		    (struct sockaddr *)&sa->sa_cp_addr6->addr,
+		    sa->sa_cp_addr6->addr_mask, sa->sa_policy->pol_iface) != 0)
 			return (-1);
 	}
 
@@ -785,6 +738,13 @@ sa_configure_iface(struct iked *env, struct iked_sa *sa, int add)
 			    saflow->flow_dst.addr_mask, caddr))
 				return (-1);
 		}
+	}
+
+	if (sa->sa_cp_dns) {
+		if (vroute_setdns(env, add,
+		    (struct sockaddr *)&sa->sa_cp_dns->addr,
+		    sa->sa_policy->pol_iface) != 0)
+			return (-1);
 	}
 #endif /* defined(HAVE_VROUTE) || defined(HAVE_VROUTE_NETLINK) */
 
@@ -1013,7 +973,7 @@ user_cmp(struct iked_user *a, struct iked_user *b)
  */
 int
 proposals_negotiate(struct iked_proposals *result, struct iked_proposals *local,
-    struct iked_proposals *peer, int rekey)
+    struct iked_proposals *peer, int rekey, int groupid)
 {
 	struct iked_proposal	*ppeer = NULL, *plocal, *prop, vpeer, vlocal;
 	struct iked_transform	 chosen[IKEV2_XFORMTYPE_MAX];
@@ -1038,7 +998,7 @@ proposals_negotiate(struct iked_proposals *result, struct iked_proposals *local,
 				continue;
 			bzero(match, sizeof(match));
 			score = proposals_match(plocal, ppeer, match,
-			    rekey);
+			    rekey, groupid);
 			log_debug("%s: score %d", __func__, score);
 			if (score && (!chosen_score || score < chosen_score)) {
 				chosen_score = score;
@@ -1093,10 +1053,11 @@ proposals_negotiate(struct iked_proposals *result, struct iked_proposals *local,
 
 static int
 proposals_match(struct iked_proposal *local, struct iked_proposal *peer,
-    struct iked_transform **xforms, int rekey)
+    struct iked_transform **xforms, int rekey, int dhgroup)
 {
 	struct iked_transform	*tpeer, *tlocal;
 	unsigned int		 i, j, type, score, requiredh = 0, nodh = 0, noauth = 0;
+	unsigned int		 dhforced = 0;
 	uint8_t			 protoid = peer->prop_protoid;
 	uint8_t			 peerxfs[IKEV2_XFORMTYPE_MAX];
 
@@ -1153,6 +1114,18 @@ proposals_match(struct iked_proposal *local, struct iked_proposal *peer,
 			    tpeer->xform_length != tlocal->xform_length)
 				continue;
 			type = tpeer->xform_type;
+
+			if (rekey && nodh == 0 && dhgroup >= 0 &&
+			    protoid == IKEV2_SAPROTO_ESP &&
+			    type == IKEV2_XFORMTYPE_DH) {
+				if (dhforced)
+					continue;
+				/* reset xform, so this xform w/matching group is enforced */
+				if (tlocal->xform_id == dhgroup) {
+					xforms[type] = NULL;
+					dhforced = 1;
+				}
+			}
 
 			if (xforms[type] == NULL || tlocal->xform_score <
 			    xforms[type]->xform_score) {

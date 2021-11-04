@@ -1,4 +1,4 @@
-/*	$OpenBSD: iked.h,v 1.189 2021/03/05 22:26:04 tobhe Exp $	*/
+/*	$OpenBSD: iked.h,v 1.194 2021/10/12 10:01:59 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019-2021 Tobias Heider <tobhe@openbsd.org>
@@ -99,7 +99,6 @@ struct ctl_conn {
 	struct imsgev		 iev;
 };
 TAILQ_HEAD(ctl_connlist, ctl_conn);
-extern  struct ctl_connlist ctl_conns;
 
 extern enum privsep_procid privsep_process;
 
@@ -434,6 +433,7 @@ struct iked_sa {
 	int				 sa_cp;		/* XXX */
 	struct iked_addr		*sa_cp_addr;	/* requested address */
 	struct iked_addr		*sa_cp_addr6;	/* requested address */
+	struct iked_addr		*sa_cp_dns;	/* requested dns */
 
 	struct iked_policy		*sa_policy;
 	struct timeval			 sa_timecreated;
@@ -616,6 +616,7 @@ struct iked_message {
 	int			 msg_cp;
 	struct iked_addr	*msg_cp_addr;	/* requested address */
 	struct iked_addr	*msg_cp_addr6;	/* requested address */
+	struct iked_addr	*msg_cp_dns;	/* requested dns */
 
 	/* MOBIKE */
 	int			 msg_update_sa_addresses;
@@ -757,6 +758,7 @@ struct iked {
 
 	int				 sc_pfkey;	/* ike process */
 	struct event			 sc_pfkeyev;
+	struct event			 sc_routeev;
 	uint8_t				 sc_certreqtype;
 	struct ibuf			*sc_certreq;
 	void				*sc_vroute;
@@ -856,6 +858,7 @@ int	 config_setmode(struct iked *, unsigned int);
 int	 config_getmode(struct iked *, unsigned int);
 int	 config_setreset(struct iked *, unsigned int, enum privsep_procid);
 int	 config_getreset(struct iked *, struct imsg *);
+int	 config_doreset(struct iked *, unsigned int);
 int	 config_setpolicy(struct iked *, struct iked_policy *,
 	    enum privsep_procid);
 int	 config_getpolicy(struct iked *, struct imsg *);
@@ -917,7 +920,7 @@ struct iked_sa *
 	 sa_dstid_insert(struct iked *, struct iked_sa *);
 void	 sa_dstid_remove(struct iked *, struct iked_sa *);
 int	 proposals_negotiate(struct iked_proposals *, struct iked_proposals *,
-	    struct iked_proposals *, int);
+	    struct iked_proposals *, int, int);
 RB_PROTOTYPE(iked_sas, iked_sa, sa_entry, sa_cmp);
 RB_PROTOTYPE(iked_dstid_sas, iked_sa, sa_dstid_entry, sa_dstid_cmp);
 RB_PROTOTYPE(iked_addrpool, iked_sa, sa_addrpool_entry, sa_addrpool_cmp);
@@ -976,7 +979,11 @@ ssize_t	 dsa_verify_final(struct iked_dsa *, void *, size_t);
 
 /* vroute.c */
 void vroute_init(struct iked *);
+int vroute_setaddr(struct iked *, int, struct sockaddr *, int, unsigned int);
+void vroute_cleanup(struct iked *);
 int vroute_getaddr(struct iked *, struct imsg *);
+int vroute_setdns(struct iked *, int, struct sockaddr *, unsigned int);
+int vroute_getdns(struct iked *, struct imsg *);
 int vroute_setaddroute(struct iked *, uint8_t, struct sockaddr *,
     uint8_t, struct sockaddr *);
 int vroute_setcloneroute(struct iked *, uint8_t, struct sockaddr *,
@@ -1211,6 +1218,8 @@ void	 print_debug(const char *, ...)
 	    __attribute__((format(printf, 1, 2)));
 void	 print_verbose(const char *, ...)
 	    __attribute__((format(printf, 1, 2)));
+int	 run_command(const char *, ...);
+int	 run_command_va(const char *, va_list);
 
 /* imsg_util.c */
 struct ibuf *

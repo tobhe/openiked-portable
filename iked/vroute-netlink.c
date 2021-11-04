@@ -37,12 +37,44 @@ int vroute_setroute(struct iked *, uint8_t, struct sockaddr *, uint8_t,
 int vroute_doroute(struct iked *, uint8_t, struct sockaddr *,
     struct sockaddr *, struct sockaddr *, int);
 int vroute_doaddr(struct iked *, int, struct sockaddr *, struct sockaddr *, int);
+int vroute_dodns(struct iked *, struct sockaddr *, int, unsigned int);
+void vroute_cleanup(struct iked *);
+
+void vroute_insertaddr(struct iked *, int, struct sockaddr *, struct sockaddr *);
+void vroute_removeaddr(struct iked *, int, struct sockaddr *, struct sockaddr *);
+void vroute_insertiface(struct iked *, unsigned int);
+void vroute_removeiface(struct iked *, unsigned int);
+void vroute_insertroute(struct iked *, struct sockaddr *);
+void vroute_removeroute(struct iked *, struct sockaddr *);
+
+struct vroute_addr {
+	int				va_ifidx;
+	struct	sockaddr_storage	va_addr;
+	struct	sockaddr_storage	va_mask;
+	TAILQ_ENTRY(vroute_addr)	va_entry;
+};
+TAILQ_HEAD(vroute_addrs, vroute_addr);
+
+struct vroute_route {
+	struct	sockaddr_storage	vr_dest;
+	TAILQ_ENTRY(vroute_route)	vr_entry;
+};
+TAILQ_HEAD(vroute_routes, vroute_route);
+
+struct vroute_iface {
+	unsigned int			vi_ifidx;
+	TAILQ_ENTRY(vroute_iface)	vi_entry;
+};
+TAILQ_HEAD(vroute_ifaces, vroute_iface);
 
 static int	nl_addattr(struct nlmsghdr *, int, void *, size_t);
 static int	nl_dorule(struct iked *, int, uint32_t, int, int);
 
 struct iked_vroute_sc {
-	int	ivr_rtsock;
+	struct vroute_addrs	ivr_addrs;
+	struct vroute_ifaces	ivr_ifaces;
+	struct vroute_routes	ivr_routes;
+	int			ivr_rtsock;
 };
 
 #define NL_BUFLEN	1024
@@ -62,9 +94,88 @@ vroute_init(struct iked *env)
 	    NETLINK_ROUTE)) == -1)
 		fatal("%s: failed to create netlink socket", __func__);
 
+	TAILQ_INIT(&ivr->ivr_addrs);
+	TAILQ_INIT(&ivr->ivr_ifaces);
+	TAILQ_INIT(&ivr->ivr_routes);
+
 	env->sc_vroute = ivr;
 	nl_dorule(env, IKED_RT_TABLE, IKED_RT_PRIO, AF_INET, 1);
 	nl_dorule(env, IKED_RT_TABLE, IKED_RT_PRIO, AF_INET6, 1);
+}
+
+void
+vroute_cleanup(struct iked *env)
+{
+	struct iked_vroute_sc	*ivr = env->sc_vroute;
+	struct vroute_addr	*addr;
+	struct vroute_iface	*iface;
+	struct vroute_route	*route;
+
+	while ((addr = TAILQ_FIRST(&ivr->ivr_addrs))) {
+		vroute_doaddr(env, addr->va_ifidx,
+		    (struct sockaddr *)&addr->va_addr,
+		    (struct sockaddr *)&addr->va_mask, 0);
+		TAILQ_REMOVE(&ivr->ivr_addrs, addr, va_entry);
+		free(addr);
+	}
+
+	while ((iface = TAILQ_FIRST(&ivr->ivr_ifaces))) {
+		vroute_dodns(env, NULL, 0, iface->vi_ifidx);
+		TAILQ_REMOVE(&ivr->ivr_ifaces, iface, vi_entry);
+		free(iface);
+	}
+
+	while ((route = TAILQ_FIRST(&ivr->ivr_routes))) {
+		vroute_doroute(env, RTM_DELROUTE,
+		    (struct sockaddr *)&route->vr_dest, NULL, NULL, 1);
+		TAILQ_REMOVE(&ivr->ivr_routes, route, vr_entry);
+		free(route);
+	}
+}
+
+int
+vroute_setaddr(struct iked *env, int add, struct sockaddr *addr,
+    int mask, unsigned int ifidx)
+{
+	struct iovec		 iov[4];
+	int			 iovcnt;
+	struct sockaddr_in	 mask4;
+	struct sockaddr_in6	 mask6;
+
+	iovcnt = 0;
+	iov[0].iov_base = addr;
+	iov[0].iov_len = SA_LEN(addr);
+	iovcnt++;
+
+	switch(addr->sa_family) {
+	case AF_INET:
+		bzero(&mask, sizeof(mask));
+		mask4.sin_addr.s_addr = prefixlen2mask(mask ? mask : 32);
+		mask4.sin_family = AF_INET;
+
+		iov[1].iov_base = &mask4;
+		iov[1].iov_len = sizeof(mask4);
+		iovcnt++;
+		break;
+	case AF_INET6:
+		bzero(&mask6, sizeof(mask6));
+		prefixlen2mask6(mask ? mask : 128,
+		    (uint32_t *)&mask6.sin6_addr.s6_addr);
+		mask6.sin6_family = AF_INET6;
+		iov[1].iov_base = &mask6;
+		iov[1].iov_len = sizeof(mask6);
+		iovcnt++;
+		break;
+	default:
+		return -1;
+	}
+
+	iov[2].iov_base = &ifidx;
+	iov[2].iov_len = sizeof(ifidx);
+	iovcnt++;
+
+	return (proc_composev(&env->sc_ps, PROC_PARENT,
+	    add ? IMSG_IF_ADDADDR : IMSG_IF_DELADDR, iov, iovcnt));
 }
 
 int
@@ -73,7 +184,7 @@ vroute_getaddr(struct iked *env, struct imsg *imsg)
 	struct sockaddr		*addr, *mask;
 	uint8_t			*ptr;
 	size_t			 left;
-	int			 af;
+	int			 af, add;
 	unsigned int		 ifidx;
 
 	ptr = imsg->data;
@@ -107,8 +218,165 @@ vroute_getaddr(struct iked *env, struct imsg *imsg)
 	ptr += sizeof(ifidx);
 	left -= sizeof(ifidx);
 
+	add = (imsg->hdr.type == IMSG_IF_ADDADDR);
+	/* Store address for cleanup */
+	if (add)
+		vroute_insertaddr(env, ifidx, addr, mask);
+	else
+		vroute_removeaddr(env, ifidx, addr, mask);
+
 	return (vroute_doaddr(env, ifidx, addr, mask,
 	    imsg->hdr.type == IMSG_IF_ADDADDR));
+}
+
+int
+vroute_setdns(struct iked *env, int add, struct sockaddr *dns,
+    unsigned int ifidx)
+{
+	struct iovec		 iov[2];
+	int			 iovcnt = 0;
+
+	if (dns == NULL)
+		return (0);
+
+	iov[0].iov_base = &ifidx;
+	iov[0].iov_len = sizeof(ifidx);
+	iovcnt++;
+
+	iov[1].iov_base = dns;
+	iov[1].iov_len = SA_LEN(dns);
+	iovcnt++;
+
+	return (proc_composev(&env->sc_ps, PROC_PARENT,
+	    add ? IMSG_VDNS_ADD: IMSG_VDNS_DEL, iov, iovcnt));
+}
+
+int
+vroute_getdns(struct iked *env, struct imsg *imsg)
+{
+	struct sockaddr		*dns;
+	uint8_t			*ptr;
+	size_t			 left;
+	int			 add, ifidx;
+
+	ptr = imsg->data;
+	left = IMSG_DATA_SIZE(imsg);
+
+	if (left < sizeof(ifidx))
+		fatalx("bad length imsg received");
+
+	memcpy(&ifidx, ptr, sizeof(ifidx));
+	ptr += sizeof(ifidx);
+	left -= sizeof(ifidx);
+
+	if (left < sizeof(*dns))
+		fatalx("bad length imsg received");
+	dns = (struct sockaddr *) ptr;
+
+	if (left < SA_LEN(dns))
+		fatalx("bad length imsg received");
+	ptr += SA_LEN(dns);
+	left -= SA_LEN(dns);
+
+	add = (imsg->hdr.type == IMSG_VDNS_ADD);
+	return (vroute_dodns(env, dns, add, ifidx));
+}
+
+void
+vroute_insertiface(struct iked *env, unsigned int ifidx)
+{
+	struct iked_vroute_sc	*ivr = env->sc_vroute;
+	struct vroute_iface	*iface;
+
+	/* Prevent duplicates */
+	TAILQ_FOREACH(iface, &ivr->ivr_ifaces, vi_entry) {
+		if (iface->vi_ifidx == ifidx)
+			return;
+	}
+
+	iface = calloc(1, sizeof(*iface));
+	if (iface == NULL)
+		fatalx("%s: calloc.", __func__);
+
+	iface->vi_ifidx = ifidx;
+	TAILQ_INSERT_TAIL(&ivr->ivr_ifaces, iface, vi_entry);
+}
+
+void
+vroute_removeiface(struct iked *env, unsigned int ifidx)
+{
+	struct iked_vroute_sc	*ivr = env->sc_vroute;
+	struct vroute_iface	*iface;
+
+	TAILQ_FOREACH(iface, &ivr->ivr_ifaces, vi_entry) {
+		if (iface->vi_ifidx == ifidx)
+			continue;
+		TAILQ_REMOVE(&ivr->ivr_ifaces, iface, vi_entry);
+	}
+}
+
+void
+vroute_insertroute(struct iked *env, struct sockaddr *dest)
+{
+	struct iked_vroute_sc	*ivr = env->sc_vroute;
+	struct vroute_route	*route;
+
+	route = calloc(1, sizeof(*route));
+	if (route == NULL)
+		fatalx("%s: calloc.", __func__);
+
+	memcpy(&route->vr_dest, dest, SA_LEN(dest));
+
+	TAILQ_INSERT_TAIL(&ivr->ivr_routes, route, vr_entry);
+}
+
+void
+vroute_removeroute(struct iked *env, struct sockaddr *dest)
+{
+	struct iked_vroute_sc	*ivr = env->sc_vroute;
+	struct vroute_route	*route;
+
+	TAILQ_FOREACH(route, &ivr->ivr_routes, vr_entry) {
+		if (sockaddr_cmp(dest, (struct sockaddr *)&route->vr_dest, -1))
+			continue;
+		TAILQ_REMOVE(&ivr->ivr_routes, route, vr_entry);
+	}
+}
+
+void
+vroute_insertaddr(struct iked *env, int ifidx, struct sockaddr *addr,
+    struct sockaddr *mask)
+{
+	struct iked_vroute_sc	*ivr = env->sc_vroute;
+	struct vroute_addr	*vaddr;
+
+	vaddr = calloc(1, sizeof(*vaddr));
+	if (vaddr == NULL)
+		fatalx("%s: calloc.", __func__);
+
+	memcpy(&vaddr->va_addr, addr, SA_LEN(addr));
+	memcpy(&vaddr->va_mask, mask, SA_LEN(mask));
+	vaddr->va_ifidx = ifidx;
+
+	TAILQ_INSERT_TAIL(&ivr->ivr_addrs, vaddr, va_entry);
+}
+
+void
+vroute_removeaddr(struct iked *env, int ifidx, struct sockaddr *addr,
+    struct sockaddr *mask)
+{
+	struct iked_vroute_sc	*ivr = env->sc_vroute;
+	struct vroute_addr	*vaddr;
+
+	TAILQ_FOREACH(vaddr, &ivr->ivr_addrs, va_entry) {
+		if (sockaddr_cmp(addr, (struct sockaddr *)&vaddr->va_addr, -1))
+			continue;
+		if (sockaddr_cmp(mask, (struct sockaddr *)&vaddr->va_mask, -1))
+			continue;
+		if (ifidx != vaddr->va_ifidx)
+			continue;
+		TAILQ_REMOVE(&ivr->ivr_addrs, vaddr, va_entry);
+	}
 }
 
 int
@@ -245,6 +513,7 @@ vroute_getroute(struct iked *env, struct imsg *imsg)
 		type = RTM_NEWROUTE;
 		break;
 	case IMSG_VROUTE_DEL:
+		vroute_removeroute(env, dest);
 		type = RTM_DELROUTE;
 		break;
 	}
@@ -279,6 +548,8 @@ vroute_getcloneroute(struct iked *env, struct imsg *imsg)
 		return (-1);
 	ptr += SA_LEN(dst);
 	left -= SA_LEN(dst);
+
+	vroute_insertroute(env, dst);
 
 	/*
 	 * With rtnetlink(7) the host route is not cloned. Instead, we
@@ -441,6 +712,33 @@ vroute_doaddr(struct iked *env, int ifidx, struct sockaddr *addr,
 	return (0);
 }
 
+int
+vroute_dodns(struct iked *env, struct sockaddr *dns, int add,
+    unsigned int ifindex)
+{
+	if (add)
+		vroute_insertiface(env, ifindex);
+	else
+		vroute_removeiface(env, ifindex);
+
+#ifdef HAVE_SYSTEMD
+	char ifname[IF_NAMESIZE];
+
+	if (if_indextoname(ifindex, ifname) == NULL)
+		return (-1);
+
+	if (add && dns) {
+		/* XXX: use native dbus instead */
+		run_command("resolvectl dns %s %s", ifname,
+		    print_host(dns, NULL, 0));
+		run_command("resolvectl domain %s ~.", ifname);
+	} else {
+		run_command("resolvectl revert %s", ifname);
+	}
+#endif
+	return (0);
+}
+
 static int
 nl_dorule(struct iked *env, int table, uint32_t prio, int family, int add)
 {
@@ -455,7 +753,7 @@ nl_dorule(struct iked *env, int table, uint32_t prio, int family, int add)
 
 	req.hdr.nlmsg_flags = NLM_F_REQUEST;
 	req.hdr.nlmsg_type = add ? RTM_NEWRULE : RTM_DELRULE;
-	req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
+	req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
 	if (add)
 		req.hdr.nlmsg_flags |= NLM_F_CREATE | NLM_F_EXCL;
 

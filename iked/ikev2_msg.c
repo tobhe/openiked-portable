@@ -1,4 +1,4 @@
-/*	$OpenBSD: ikev2_msg.c,v 1.77 2020/10/29 21:49:58 tobhe Exp $	*/
+/*	$OpenBSD: ikev2_msg.c,v 1.80 2021/09/07 14:06:23 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019 Tobias Heider <tobias.heider@stusta.de>
@@ -46,9 +46,9 @@
 void	 ikev1_recv(struct iked *, struct iked_message *);
 void	 ikev2_msg_response_timeout(struct iked *, void *);
 void	 ikev2_msg_retransmit_timeout(struct iked *, void *);
-int	 ikev2_check_frag_oversize(struct iked_sa *sa, struct ibuf *buf);
-int	 ikev2_send_encrypted_fragments(struct iked *env, struct iked_sa *sa,
-	    struct ibuf *in,uint8_t exchange, uint8_t firstpayload, int response);
+int	 ikev2_check_frag_oversize(struct iked_sa *, struct ibuf *);
+int	 ikev2_send_encrypted_fragments(struct iked *, struct iked_sa *,
+	    struct ibuf *, uint8_t, uint8_t, int);
 int	 ikev2_msg_encrypt_prepare(struct iked_sa *, struct ikev2_payload *,
 	    struct ibuf*, struct ibuf *, struct ike_header *, uint8_t, int);
 
@@ -165,12 +165,16 @@ ikev2_msg_copy(struct iked *env, struct iked_message *msg)
 		return (NULL);
 	len = ibuf_size(msg->msg_data) - msg->msg_offset;
 
+	if ((m = malloc(sizeof(*m))) == NULL)
+		return (NULL);
+
 	if ((ptr = ibuf_seek(msg->msg_data, msg->msg_offset, len)) == NULL ||
-	    (m = malloc(sizeof(*m))) == NULL ||
 	    (buf = ikev2_msg_init(env, m, &msg->msg_peer, msg->msg_peerlen,
 	     &msg->msg_local, msg->msg_locallen, msg->msg_response)) == NULL ||
-	    ibuf_add(buf, ptr, len))
+	    ibuf_add(buf, ptr, len)) {
+		free(m);
 		return (NULL);
+	}
 
 	m->msg_fd = msg->msg_fd;
 	m->msg_msgid = msg->msg_msgid;
@@ -197,6 +201,7 @@ ikev2_msg_cleanup(struct iked *env, struct iked_message *msg)
 		free(msg->msg_eap.eam_user);
 		free(msg->msg_cp_addr);
 		free(msg->msg_cp_addr6);
+		free(msg->msg_cp_dns);
 
 		msg->msg_nonce = NULL;
 		msg->msg_ke = NULL;
@@ -209,6 +214,7 @@ ikev2_msg_cleanup(struct iked *env, struct iked_message *msg)
 		msg->msg_eap.eam_user = NULL;
 		msg->msg_cp_addr = NULL;
 		msg->msg_cp_addr6 = NULL;
+		msg->msg_cp_dns = NULL;
 
 		config_free_proposals(&msg->msg_proposals, 0);
 		while ((cr = SIMPLEQ_FIRST(&msg->msg_certreqs))) {

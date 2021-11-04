@@ -1,4 +1,4 @@
-/*	$OpenBSD: ikev2.c,v 1.319 2021/03/23 21:31:29 tobhe Exp $	*/
+/*	$OpenBSD: ikev2.c,v 1.329 2021/10/12 10:01:59 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019 Tobias Heider <tobias.heider@stusta.de>
@@ -221,6 +221,7 @@ ikev2_shutdown(struct privsep_proc *p)
 
 	ibuf_release(env->sc_certreq);
 	env->sc_certreq = NULL;
+	config_doreset(env, RESET_ALL);
 }
 
 int
@@ -806,6 +807,7 @@ ikev2_auth_verify(struct iked *env, struct iked_sa *sa)
 		    ikev2_auth_map),
 		    print_map(ikeauth.auth_method,
 		    ikev2_auth_map));
+		ikev2_send_auth_failed(env, sa);
 		return (-1);
 	}
 	ikeauth.auth_method = sa->sa_peerauth.id_type;
@@ -814,6 +816,7 @@ ikev2_auth_verify(struct iked *env, struct iked_sa *sa)
 	    sa->sa_hdr.sh_initiator)) == NULL) {
 		log_debug("%s: failed to get auth data",
 		    __func__);
+		ikev2_send_auth_failed(env, sa);
 		return (-1);
 	}
 
@@ -971,7 +974,7 @@ ikev2_ike_auth_recv(struct iked *env, struct iked_sa *sa,
 	if (!TAILQ_EMPTY(&msg->msg_proposals)) {
 		if (proposals_negotiate(&sa->sa_proposals,
 		    &sa->sa_policy->pol_proposals, &msg->msg_proposals,
-		    0) != 0) {
+		    0, -1) != 0) {
 			log_info("%s: no proposal chosen", __func__);
 			msg->msg_error = IKEV2_N_NO_PROPOSAL_CHOSEN;
 			return (-1);
@@ -997,6 +1000,13 @@ ikev2_ike_auth_recv(struct iked *env, struct iked_sa *sa,
 			log_info("%s: obtained lease: %s", SPI_SA(sa, __func__),
 			    print_host((struct sockaddr *)&sa->sa_cp_addr6->addr, NULL, 0));
 		}
+		if (msg->msg_cp_dns) {
+			sa->sa_cp_dns = msg->msg_cp_dns;
+			msg->msg_cp_dns = NULL;
+			log_debug("%s: DNS: %s", __func__,
+			    print_host((struct sockaddr *)&sa->sa_cp_dns->addr,
+			    NULL, 0));
+		}
 		sa->sa_cp = msg->msg_cp;
 	}
 
@@ -1011,7 +1021,6 @@ ikev2_ike_auth_recv(struct iked *env, struct iked_sa *sa,
 			certtype = msg->msg_cert.id_type;
 			cert = ibuf_data(msg->msg_cert.id_buf);
 			certlen = ibuf_length(msg->msg_cert.id_buf);
-			bzero(&msg->msg_cert, sizeof(msg->msg_cert));
 		}
 		sa->sa_stateflags &= ~IKED_REQ_CERTVALID;
 		if (ca_setcert(env, &sa->sa_hdr, id, certtype, cert, certlen, PROC_CERT) == -1)
@@ -3617,7 +3626,7 @@ ikev2_resp_ike_eap_mschap(struct iked *env, struct iked_sa *sa,
 		    sizeof(ntresponse)) != 0) {
 			log_info("%s: '%s' authentication failed",
 			   SPI_SA(sa, __func__), usr->usr_name);
-			free(pass);
+			freezero(pass, passlen);
 
 			/* XXX should we send an EAP failure packet? */
 			return (-1);
@@ -3631,12 +3640,12 @@ ikev2_resp_ike_eap_mschap(struct iked *env, struct iked_sa *sa,
 		    successmsg);
 		if ((sa->sa_eapmsk = ibuf_new(NULL, MSCHAP_MSK_SZ)) == NULL) {
 			log_info("%s: failed to get MSK", SPI_SA(sa, __func__));
-			free(pass);
+			freezero(pass, passlen);
 			return (-1);
 		}
 		mschap_msk(pass, passlen, ntresponse,
 		    ibuf_data(sa->sa_eapmsk));
-		free(pass);
+		freezero(pass, passlen);
 
 		log_info("%s: '%s' authenticated", __func__, usr->usr_name);
 
@@ -4218,7 +4227,7 @@ ikev2_init_create_child_sa(struct iked *env, struct iked_message *msg)
 	}
 
 	if (proposals_negotiate(&sa->sa_proposals, &sa->sa_proposals,
-	    &msg->msg_proposals, 1) != 0) {
+	    &msg->msg_proposals, 1, -1) != 0) {
 		log_info("%s: no proposal chosen", SPI_SA(sa, __func__));
 		return (-1);
 	}
@@ -4520,6 +4529,8 @@ ikev2_ikesa_enable(struct iked *env, struct iked_sa *sa, struct iked_sa *nsa)
 	sa->sa_cp_addr = NULL;
 	nsa->sa_cp_addr6 = sa->sa_cp_addr6;
 	sa->sa_cp_addr6 = NULL;
+	nsa->sa_cp_dns = sa->sa_cp_dns;
+	sa->sa_cp_dns = NULL;
 	/* Transfer other attributes */
         if (sa->sa_dstid_entry_valid) {
 		sa_dstid_remove(env, sa);
@@ -4719,7 +4730,7 @@ ikev2_resp_create_child_sa(struct iked *env, struct iked_message *msg)
 
 		if (proposals_negotiate(&proposals,
 		    &sa->sa_policy->pol_proposals, &msg->msg_proposals,
-		    1) != 0) {
+		    1, msg->msg_dhgroup) != 0) {
 			log_info("%s: no proposal chosen", __func__);
 			msg->msg_error = IKEV2_N_NO_PROPOSAL_CHOSEN;
 			goto fail;
@@ -5234,7 +5245,7 @@ ikev2_sa_negotiate_common(struct iked *env, struct iked_sa *sa, struct iked_mess
 
 	/* XXX we need a better way to get this */
 	if (proposals_negotiate(&sa->sa_proposals,
-	    &msg->msg_policy->pol_proposals, &msg->msg_proposals, 0) != 0) {
+	    &msg->msg_policy->pol_proposals, &msg->msg_proposals, 0, -1) != 0) {
 		log_info("%s: proposals_negotiate", __func__);
 		return (-1);
 	}
@@ -7101,25 +7112,25 @@ ikev2_cp_fixaddr(struct iked_sa *sa, struct iked_addr *addr,
 		return (-1);
 	switch (addr->addr_af) {
 	case AF_INET:
+		in4 = (struct sockaddr_in *)&addr->addr;
+		if (in4->sin_addr.s_addr)
+			return (-2);
 		naddr = (sa->sa_cp == IKEV2_CP_REQUEST) ?
 		    sa->sa_addrpool : sa->sa_cp_addr;
 		if (naddr == NULL)
 			return (-1);
-		in4 = (struct sockaddr_in *)&addr->addr;
-		if (in4->sin_addr.s_addr)
-			return (-2);
 		memcpy(patched, naddr, sizeof(*patched));
 		patched->addr_net = 0;
 		patched->addr_mask = 32;
 		break;
 	case AF_INET6:
+		in6 = (struct sockaddr_in6 *)&addr->addr;
+		if (!IN6_IS_ADDR_UNSPECIFIED(&in6->sin6_addr))
+			return (-2);
 		naddr = (sa->sa_cp == IKEV2_CP_REQUEST) ?
 		    sa->sa_addrpool6 : sa->sa_cp_addr6;
 		if (naddr == NULL)
 			return (-1);
-		in6 = (struct sockaddr_in6 *)&addr->addr;
-		if (!IN6_IS_ADDR_UNSPECIFIED(&in6->sin6_addr))
-			return (-2);
 		memcpy(patched, naddr, sizeof(*patched));
 		patched->addr_net = 0;
 		patched->addr_mask = 128;

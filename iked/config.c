@@ -1,4 +1,4 @@
-/*	$OpenBSD: config.c,v 1.78 2021/02/22 21:58:12 tobhe Exp $	*/
+/*	$OpenBSD: config.c,v 1.82 2021/10/12 09:27:21 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019-2021 Tobias Heider <tobhe@openbsd.org>
@@ -178,6 +178,7 @@ config_free_sa(struct iked *env, struct iked_sa *sa)
 
 	free(sa->sa_cp_addr);
 	free(sa->sa_cp_addr6);
+	free(sa->sa_cp_dns);
 
 	free(sa->sa_tag);
 	free(sa);
@@ -458,7 +459,7 @@ config_new_user(struct iked *env, struct iked_user *new)
 		memcpy(old->usr_pass, new->usr_pass, IKED_PASSWORD_SIZE);
 
 		log_debug("%s: updating user %s", __func__, usr->usr_name);
-		free(usr);
+		freezero(usr, sizeof *usr);
 
 		return (old);
 	}
@@ -528,22 +529,29 @@ config_setreset(struct iked *env, unsigned int mode, enum privsep_procid id)
 int
 config_getreset(struct iked *env, struct imsg *imsg)
 {
-	struct iked_policy	*pol, *poltmp;
-	struct iked_sa		*sa;
-	struct iked_user	*usr;
 	unsigned int		 mode;
 
 	IMSG_SIZE_CHECK(imsg, &mode);
 	memcpy(&mode, imsg->data, sizeof(mode));
 
-	if (mode == RESET_EXIT || mode == RESET_ALL || mode == RESET_POLICY) {
+	return (config_doreset(env, mode));
+}
+
+int
+config_doreset(struct iked *env, unsigned int mode)
+{
+	struct iked_policy	*pol, *poltmp;
+	struct iked_sa		*sa;
+	struct iked_user	*usr;
+
+	if (mode == RESET_ALL || mode == RESET_POLICY) {
 		log_debug("%s: flushing policies", __func__);
 		TAILQ_FOREACH_SAFE(pol, &env->sc_policies, pol_entry, poltmp) {
 			config_free_policy(env, pol);
 		}
 	}
 
-	if (mode == RESET_EXIT || mode == RESET_ALL || mode == RESET_SA) {
+	if (mode == RESET_ALL || mode == RESET_SA) {
 		log_debug("%s: flushing SAs", __func__);
 		while ((sa = RB_MIN(iked_sas, &env->sc_sas))) {
 			/* for RESET_SA we try send a DELETE */
@@ -557,16 +565,13 @@ config_getreset(struct iked *env, struct imsg *imsg)
 		}
 	}
 
-	if (mode == RESET_EXIT || mode == RESET_ALL || mode == RESET_USER) {
+	if (mode == RESET_ALL || mode == RESET_USER) {
 		log_debug("%s: flushing users", __func__);
 		while ((usr = RB_MIN(iked_users, &env->sc_users))) {
 			RB_REMOVE(iked_users, &env->sc_users, usr);
 			free(usr);
 		}
 	}
-
-	if (mode == RESET_EXIT)
-		proc_compose(&env->sc_ps, PROC_PARENT, IMSG_CTL_EXIT, NULL, 0);
 
 	return (0);
 }
@@ -687,16 +692,18 @@ int
 config_getuser(struct iked *env, struct imsg *imsg)
 {
 	struct iked_user	 usr;
+	int			 ret = -1;
 
 	IMSG_SIZE_CHECK(imsg, &usr);
 	memcpy(&usr, imsg->data, sizeof(usr));
 
-	if (config_new_user(env, &usr) == NULL)
-		return (-1);
+	if (config_new_user(env, &usr) != NULL) {
+		print_user(&usr);
+		ret = 0;
+	}
 
-	print_user(&usr);
-
-	return (0);
+	explicit_bzero(&usr, sizeof(usr));
+	return (ret);
 }
 
 int
