@@ -43,7 +43,7 @@
 #include "ikev2.h"
 
 #define ROUNDUP(x) (((x) + (PFKEYV2_CHUNK - 1)) & ~(PFKEYV2_CHUNK - 1))
-#define IOV_CNT 27
+#define IOV_CNT 28
 
 #define PFKEYV2_CHUNK sizeof(uint64_t)
 #define PFKEY_REPLY_TIMEOUT 1000
@@ -91,6 +91,9 @@ static const struct pfkey_constmap pfkey_encr[] = {
 #endif
 #ifdef SADB_X_EALG_AESGCM16
 	{ SADB_X_EALG_AESGCM16,	IKEV2_XFORMENCR_AES_GCM_16 },
+#endif
+#ifdef SADB_X_EALG_AES_GCM
+	{ SADB_X_EALG_AES_GCM,	IKEV2_XFORMENCR_AES_GCM_16 },
 #endif
 #ifdef SADB_X_EALG_AESGMAC
 	{ SADB_X_EALG_AESGMAC,	IKEV2_XFORMENCR_NULL_AES_GMAC },
@@ -691,8 +694,10 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	struct sadb_address	 sa_src, sa_dst, sa_pxy;
 	struct sadb_key		 sa_authkey, sa_enckey;
 	struct sadb_lifetime	 sa_ltime_hard, sa_ltime_soft;
-#ifdef SADB_X_EXT_UDPENCAP
+#if defined(SADB_X_EXT_UDPENCAP)
 	struct sadb_x_udpencap	 udpencap;
+#elif defined(HAVE_APPLE_NATT)
+	struct sadb_sa_natt	 natt;
 #else
 	struct sadb_x_nat_t_type nat_type;
 	struct sadb_x_nat_t_port nat_sport, nat_dport;
@@ -819,8 +824,10 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	bzero(&sa_ltime_hard, sizeof(sa_ltime_hard));
 	bzero(&sa_ltime_soft, sizeof(sa_ltime_soft));
 
-#ifdef SADB_X_EXT_UDPENCAP
+#if defined(SADB_X_EXT_UDPENCAP)
 	bzero(&udpencap, sizeof udpencap);
+#elif defined(HAVE_APPLE_NATT)
+	bzero(&natt, sizeof(natt));
 #else
 	bzero(&nat_type, sizeof(nat_type));
 #endif
@@ -850,7 +857,7 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 
 	if (satype == SADB_SATYPE_ESP &&
 	    sa->csa_ikesa->sa_udpencap && sa->csa_ikesa->sa_natt) {
-#ifdef SADB_X_EXT_UDPENCAP
+#if defined(SADB_X_EXT_UDPENCAP)
 		sadb.sadb_sa_flags |= SADB_X_SAFLAGS_UDPENCAP;
 		udpencap.sadb_x_udpencap_exttype = SADB_X_EXT_UDPENCAP;
 		udpencap.sadb_x_udpencap_len = sizeof(udpencap) / 8;
@@ -859,6 +866,14 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 
 		log_debug("%s: udpencap port %d", __func__,
 		    ntohs(udpencap.sadb_x_udpencap_port));
+#elif defined(HAVE_APPLE_NATT)
+		sadb.sadb_sa_flags |= SADB_X_EXT_NATT;
+		natt.sadb_sa_natt_port =
+		    ntohs(sa->csa_ikesa->sa_peer.addr_port);
+		natt.sadb_sa_natt_src_port =
+		    sa->csa_ikesa->sa_local.addr_port;
+		log_debug("%s: udpencap port %u", __func__,
+		    natt.sadb_sa_natt_port);
 #else
 		nat_type.sadb_x_nat_t_type_len = sizeof(nat_type) / 8;
 		nat_type.sadb_x_nat_t_type_exttype = SADB_X_EXT_NAT_T_TYPE;
@@ -1017,6 +1032,14 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	/* sa */
 	iov[iov_cnt].iov_base = &sadb;
 	iov[iov_cnt].iov_len = sizeof(sadb);
+#if defined(HAVE_APPLE_NATT)
+	if (sa->csa_ikesa->sa_udpencap && sa->csa_ikesa->sa_natt) {
+		iov_cnt++;
+		iov[iov_cnt].iov_base = &natt;
+		iov[iov_cnt].iov_len = sizeof(natt);
+		sadb.sadb_sa_len += sizeof(natt) / 8;
+	}
+#endif
 	smsg.sadb_msg_len += sadb.sadb_sa_len;
 	iov_cnt++;
 
@@ -1076,14 +1099,14 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 		iov_cnt++;
 	}
 
-#ifdef SADB_X_EXT_UDPENCAP
+#if defined(SADB_X_EXT_UDPENCAP)
 	if (udpencap.sadb_x_udpencap_len) {
 		iov[iov_cnt].iov_base = &udpencap;
 		iov[iov_cnt].iov_len = sizeof(udpencap);
 		smsg.sadb_msg_len += udpencap.sadb_x_udpencap_len;
 		iov_cnt++;
 	}
-#else
+#elif !defined(HAVE_APPLE_NATT)
 	if (nat_type.sadb_x_nat_t_type_len) {
 		iov[iov_cnt].iov_base = &nat_type;
 		iov[iov_cnt].iov_len = sizeof(nat_type);
@@ -2389,6 +2412,7 @@ out:
 			break;
 		}
 		flow.flow_dir = sa_pol->sadb_x_policy_dir;
+		flow.flow_rdomain = -1;
 
 		iov_cnt = 0;
 
@@ -2444,6 +2468,18 @@ out:
 		    flow.flow_dst.addr_port) == -1) {
 			log_debug("%s: invalid dst address", __func__);
 			free(reply);
+			break;
+		}
+
+		switch (hdr->sadb_msg_satype) {
+		case SADB_SATYPE_AH:
+			flow.flow_saproto = IKEV2_SAPROTO_AH;
+			break;
+		case SADB_SATYPE_ESP:
+			flow.flow_saproto = IKEV2_SAPROTO_ESP;
+			break;
+		case SADB_X_SATYPE_IPCOMP:
+			flow.flow_saproto = IKEV2_SAPROTO_IPCOMP;
 			break;
 		}
 

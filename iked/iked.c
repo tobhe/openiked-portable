@@ -1,4 +1,4 @@
-/*	$OpenBSD: iked.c,v 1.56 2021/03/03 22:18:00 tobhe Exp $	*/
+/*	$OpenBSD: iked.c,v 1.58 2021/09/01 15:30:06 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019 Tobias Heider <tobias.heider@stusta.de>
@@ -21,6 +21,10 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -229,6 +233,7 @@ main(int argc, char *argv[])
 	event_dispatch();
 
 	log_debug("%d parent exiting", getpid());
+	parent_shutdown(env);
 
 	return (0);
 }
@@ -262,6 +267,11 @@ parent_configure(struct iked *env)
 
 	bzero(&ss, sizeof(ss));
 	ss.ss_family = AF_INET;
+
+#ifdef __APPLE__
+	int nattport = env->sc_nattport;
+	sysctlbyname("net.inet.ipsec.esp_port", NULL, NULL, &nattport, sizeof(nattport));
+#endif
 
 	/* see comment on config_setsocket() */
 	if (env->sc_nattmode != NATT_FORCE)
@@ -367,10 +377,8 @@ parent_sig_handler(int sig, short event, void *arg)
 		break;
 	case SIGTERM:
 	case SIGINT:
-		log_info("%s: stopping iked", __func__);
-		config_setreset(ps->ps_env, RESET_EXIT, PROC_IKEV2);
-		config_setreset(ps->ps_env, RESET_ALL, PROC_CERT);
-		break;
+		die = 1;
+		/* FALLTHROUGH */
 	case SIGCHLD:
 		do {
 			int len;
@@ -483,14 +491,15 @@ parent_dispatch_ikev2(int fd, struct privsep_proc *p, struct imsg *imsg)
 	case IMSG_IF_ADDADDR:
 	case IMSG_IF_DELADDR:
 		return (vroute_getaddr(env, imsg));
+	case IMSG_VDNS_ADD:
+	case IMSG_VDNS_DEL:
+		return (vroute_getdns(env, imsg));
 	case IMSG_VROUTE_ADD:
 	case IMSG_VROUTE_DEL:
 		return (vroute_getroute(env, imsg));
 	case IMSG_VROUTE_CLONE:
 		return (vroute_getcloneroute(env, imsg));
 #endif
-	case IMSG_CTL_EXIT:
-		parent_shutdown(env);
 	default:
 		return (-1);
 	}
@@ -503,6 +512,9 @@ parent_shutdown(struct iked *env)
 {
 	proc_kill(&env->sc_ps);
 
+#if defined(HAVE_VROUTE) || defined(HAVE_VROUTE_NETLINK)
+	vroute_cleanup(env);
+#endif
 	free(env->sc_vroute);
 	free(env);
 

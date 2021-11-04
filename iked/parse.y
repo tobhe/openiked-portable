@@ -1,4 +1,4 @@
-/*	$OpenBSD: parse.y,v 1.130 2021/03/16 22:50:52 tobhe Exp $	*/
+/*	$OpenBSD: parse.y,v 1.133 2021/10/12 09:27:21 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019-2021 Tobias Heider <tobhe@openbsd.org>
@@ -171,7 +171,7 @@ struct iked_transform ikev2_default_esp_transforms[] = {
 	{ IKEV2_XFORMTYPE_INTEGR, IKEV2_XFORMAUTH_HMAC_SHA2_512_256 },
 	{ IKEV2_XFORMTYPE_INTEGR, IKEV2_XFORMAUTH_HMAC_SHA1_96 },
 	{ IKEV2_XFORMTYPE_DH,	IKEV2_XFORMDH_NONE },
-#ifdef SADB_X_SAFLAGS_ESN
+#if defined(SADB_X_SAFLAGS_ESN) && !defined(HAVE_APPLE_NATT)
 	{ IKEV2_XFORMTYPE_ESN,	IKEV2_XFORMESN_ESN },
 #endif
 	{ IKEV2_XFORMTYPE_ESN,	IKEV2_XFORMESN_NONE },
@@ -184,7 +184,9 @@ struct iked_transform ikev2_default_esp_transforms_noauth[] = {
 	{ IKEV2_XFORMTYPE_ENCR,	IKEV2_XFORMENCR_AES_GCM_16, 128 },
 	{ IKEV2_XFORMTYPE_ENCR,	IKEV2_XFORMENCR_AES_GCM_16, 256 },
 	{ IKEV2_XFORMTYPE_DH,	IKEV2_XFORMDH_NONE },
+#if defined(SADB_X_SAFLAGS_ESN) && !defined(HAVE_APPLE_NATT)
 	{ IKEV2_XFORMTYPE_ESN,	IKEV2_XFORMESN_ESN },
+#endif
 	{ IKEV2_XFORMTYPE_ESN,	IKEV2_XFORMESN_NONE },
 	{ 0 }
 };
@@ -286,6 +288,7 @@ const struct ipsec_xf groupxfs[] = {
 	{ "grp30",		IKEV2_XFORMDH_BRAINPOOL_P512R1 },
 	{ "curve25519",		IKEV2_XFORMDH_CURVE25519 },
 	{ "grp31",		IKEV2_XFORMDH_CURVE25519 },
+	{ "sntrup761x25519",	IKEV2_XFORMDH_X_SNTRUP761X25519 },
 	{ NULL }
 };
 
@@ -557,7 +560,7 @@ user		: USER STRING STRING		{
 			if (create_user($2, $3) == -1)
 				YYERROR;
 			free($2);
-			free($3);
+			freezero($3, strlen($3));
 		}
 		;
 
@@ -3098,12 +3101,15 @@ create_user(const char *user, const char *pass)
 	if (*pass == '\0' || (strlcpy(usr.usr_pass, pass,
 	    sizeof(usr.usr_pass)) >= sizeof(usr.usr_pass))) {
 		yyerror("invalid password");
+		explicit_bzero(&usr, sizeof usr);	/* zap partial password */
 		return (-1);
 	}
 
 	config_setuser(env, &usr, PROC_IKEV2);
 
 	rules++;
+
+	explicit_bzero(&usr, sizeof usr);
 	return (0);
 }
 

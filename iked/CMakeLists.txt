@@ -57,7 +57,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
 elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
 	list(APPEND SRCS ipsec.c pfkey.c)
 elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-	list(APPEND SRCS ipsec-none.c)
+	list(APPEND SRCS ipsec.c pfkey.c)
 elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
 	list(APPEND SRCS ipsec.c pfkey.c)
 elseif(CMAKE_SYSTEM_NAME MATCHES "NetBSD")
@@ -88,6 +88,8 @@ list(APPEND SRCS
 	proc.c
 	smult_curve25519_ref.c
 	timer.c
+	crypto_hash.c
+	sntrup761.c
 	# Generated files
 	${CMAKE_CURRENT_BINARY_DIR}/parse.c
 )
