@@ -925,6 +925,8 @@ config_getstatic(struct iked *env, struct imsg *imsg)
 	log_debug("%s: %sstickyaddress", __func__,
 	    env->sc_stickyaddress ? "" : "no ");
 
+	ikev2_reset_alive_timer(env);
+
 	return (0);
 }
 
@@ -1093,8 +1095,6 @@ config_getkey(struct iked *env, struct imsg *imsg)
 
 	explicit_bzero(imsg->data, len);
 	ca_getkey(&env->sc_ps, &id, imsg->hdr.type);
-
-	ikev2_reset_alive_timer(env);
 
 	return (0);
 }
