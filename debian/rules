@@ -1,0 +1,24 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
+
+%:
+	dh $@
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	cd obj-$(DEB_HOST_GNU_TYPE)/regress/dh && ./dhtest
+endif
+
+override_dh_fixperms:
+	dh_fixperms
+	chmod 700 debian/openiked/etc/iked/private
+	chmod 600 debian/openiked/etc/iked.conf
+
+override_dh_install:
+	dh_apparmor --profile-name=usr.sbin.iked
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DWITH_APPARMOR=yes

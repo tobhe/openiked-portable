@@ -1,0 +1,35 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in
+    configure)
+        id -g _iked > /dev/null 2>&1 || \
+            addgroup --system --force-badname _iked
+	id _iked > /dev/null 2>&1 || \
+            adduser --system --home /var/lib/openiked/empty \
+                    --no-create-home --disabled-password \
+                    --gecos "OpenIKED IKEv2 daemon" \
+                    --force-badname \
+                    --ingroup _iked _iked
+
+        [ -f /etc/iked/private/local.key ] || \
+            openssl ecparam -genkey -name prime256v1 -noout \
+                -out "/etc/iked/private/local.key"
+        [ -f /etc/iked/local.pub ] || \
+            openssl ec -in "/etc/iked/private/local.key" -pubout\
+                -out "/etc/iked/local.pub"
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure|reconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

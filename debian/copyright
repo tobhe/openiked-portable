@@ -1,0 +1,148 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: openiked
+Source: https://github.com/openiked/openiked-portable
+
+Files: *
+Copyright: 1996      David Mazieres <dm@uun.org>
+           1998-2015 Todd C. Miller <millert@openbsd.org>
+           2000      Poul-Henning Kamp <phk@FreeBSD.org>
+           2001      Daniel Hartmeier
+           2001-2014 Theo de Raadt <deraadt@openbsd.org>
+           2001-2020 Markus Friedl <markus@openbsd.org>
+           2003-2004 Henning Brauer <henning@openbsd.org>
+           2004      Mathieu Sauve-Frankel
+           2004      Ted Unangst
+           2004-2005 Esben Norby <norby@openbsd.org>
+           2004-2014 Hans-Joerg Hoexer <hshoexer@openbsd.org>
+           2005      Claudio Jeker <claudio@openbsd.org>
+           2005      Marco Pfatschbacher
+           2006-2008 Pierre-Yves Ritschard <pyr@openbsd.org>
+           2006-2016 Reyk Floeter <reyk@openbsd.org>
+           2008-2011 Damien Miller <djm@mindrot.org>
+           2008-2017 Otto Moerbeek <otto@drijf.net>
+           2010      Jonathan Gray <jsg@openbsd.org>
+           2012      Darren Tucker (dtucker at zip com au)
+           2012      Matthew Dempsky <matthew@openbsd.org>
+           2016      Marcel Moolenaar <marcel@FreeBSD.org>
+           2019-2021 Tobias Heider <tobhe@openbsd.org>
+License: ISC
+
+Files: debian/*
+Copyright: 2021 Ryan Kavanagh <rak@debian.org>
+License: ISC
+
+Files: iked/chap_ms.c
+       compat/getopt.h
+       compat/getopt_long.c
+       regress/dh/dhtest.c
+Copyright: 1995      Eric Rosenquist
+           1997      Gabor Kincses <gabor@acm.org>
+           1997-2001 Brian Somers <brian@Awfulhak.org>
+           1998      Niels Provos
+           2000      The NetBSD Foundation, Inc
+           2010-2013 Reyk Floeter <reyk@openbsd.org>
+           2020-2021 Tobias Heider <tobhe@openbsd.org>
+License: BSD-2-clause
+
+Files: compat/tree.h
+       compat/sys/tree.h
+Copyright: 2002 Niels Provos <provos@citi.umich.edu>
+	   2016 David Gwynne <dlg@openbsd.org>
+License: BSD-2-clause and ISC
+
+Files: compat/setproctitle.c
+       compat/net/ethertypes.h
+       compat/net/if_arp.h
+       compat/vis.h
+Copyright: 1982-1993 The Regents of the University of California.
+           2003      Damien Miller
+           1983-1997 Eric P. Allman
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ 3. Neither the name of the University nor the names of its contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ SUCH DAMAGE.
+
+Files: compat/netinet/ip6.h
+       compat/netinet/ip_var.h
+       compat/netinet/ip.h
+Copyright: 1982-1993 The Regents of the University of California
+           1995-1998 WIDE Project
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ 3. Neither the name of the project nor the names of its contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ SUCH DAMAGE.
+
+License: ISC
+ Permission to use, copy, modify, and/or distribute this software for
+ any purpose with or without fee is hereby granted, provided that the
+ above copyright notice and this permission notice appear in all copies.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+License: BSD-2-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
+ ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION OR CONTRIBUTORS
+ BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.

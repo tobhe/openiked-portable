@@ -1,0 +1,2 @@
+non-standard-dir-perm etc/iked/private/ 0700 != 0755
+non-standard-file-perm etc/iked.conf 0600 != 0644

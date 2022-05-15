@@ -1,0 +1,23 @@
+#!/usr/bin/env /lib/init/init-d-script
+# Copyright (C) 2021 Ryan Kavanagh <rak@debian.org>
+### BEGIN INIT INFO
+# Provides:          openiked
+# Required-Start:    $local_fs $remote_fs $syslog $network
+# Required-Stop:     $local_fs $remote_fs $syslog $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Internet Key Exchange (IKEv2) daemon
+# Description:       OpenIKED
+### END INIT INFO
+
+NAME=openiked
+DAEMON=/usr/sbin/iked
+PIDFILE=/var/run/openiked.pid
+
+do_reload()
+{
+  log_daemon_msg "Reloading $DESC configuration files" "$NAME"
+  /usr/sbin/ikectl reload
+  log_end_msg $?
+}
+# vim:set sw=2:

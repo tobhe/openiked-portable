@@ -1,0 +1,60 @@
+openiked (7.1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Add Apparmor support
+
+ -- Tobias Heider <me@tobhe.de>  Sun, 15 May 2022 18:49:39 +0200
+
+openiked (7.0-1) unstable; urgency=medium
+
+  * New upstream release
+  * Update watch file to point to tarballs on FTP mirror
+
+ -- Ryan Kavanagh <rak@debian.org>  Thu, 04 Nov 2021 12:32:35 -0400
+
+openiked (6.9.0-2) unstable; urgency=medium
+
+  * Bump standards version to 4.6.0
+  * Delete files under /etc/iked created by openiked on purge
+
+ -- Ryan Kavanagh <rak@debian.org>  Sat, 18 Sep 2021 21:27:42 -0400
+
+openiked (6.9.0-1) unstable; urgency=medium
+
+  * New upstream release
+    + Sufficiently stable to upload to unstable
+  * Set debian-branch to debian/unstable
+  * Drop unneeded README.source
+
+ -- Ryan Kavanagh <rak@debian.org>  Sat, 08 May 2021 17:38:43 -0400
+
+openiked (0.0.0~git20210409.9ff0f77-1) experimental; urgency=medium
+
+  * New upstream release
+
+ -- Ryan Kavanagh <rak@debian.org>  Fri, 09 Apr 2021 10:47:48 -0400
+
+openiked (0.0.0~git20210320.2bbd41e-1) experimental; urgency=medium
+
+  * New upstream release
+
+ -- Ryan Kavanagh <rak@debian.org>  Sat, 20 Mar 2021 15:22:29 -0400
+
+openiked (0.0.0~git20210206.e4ff75f-1) experimental; urgency=medium
+
+  * New upstream release
+
+ -- Ryan Kavanagh <rak@debian.org>  Sat, 06 Feb 2021 14:16:52 -0500
+
+openiked (0.0.0~git20210203.6bdcf9f-1) experimental; urgency=medium
+
+  * New upstream release
+  * Drop debian/manpages: upstream now installs man pages
+
+ -- Ryan Kavanagh <rak@debian.org>  Wed, 03 Feb 2021 17:58:52 -0500
+
+openiked (0.0.0~git20210123.2e52b4d-1) experimental; urgency=medium
+
+  * Initial release. (Closes: #980882)
+
+ -- Ryan Kavanagh <rak@debian.org>  Sat, 23 Jan 2021 20:40:59 -0500
