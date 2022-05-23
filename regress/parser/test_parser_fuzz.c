@@ -1,4 +1,4 @@
-/*	$OpenBSD: test_parser_fuzz.c,v 1.4 2020/09/21 20:10:14 tobhe Exp $ */
+/*	$OpenBSD: test_parser_fuzz.c,v 1.6 2022/02/22 13:47:21 claudio Exp $ */
 /*
  * Fuzz tests for payload parsing
  *
@@ -6,13 +6,13 @@
  */
 
 #include <sys/socket.h>
-#include <sys/param.h>
 #include <sys/queue.h>
 #include <sys/uio.h>
 
 #include <event.h>
 #include <imsg.h>
 #include <string.h>
+#include <syslog.h>
 
 #include "iked.h"
 #include "ikev2.h"
@@ -478,9 +478,8 @@ parser_fuzz_tests(void)
 	struct iked_message	 msg;
 	struct ibuf		*data;
 
-#if 0
-	log_init(3);
-#endif
+	log_init(1, LOG_DAEMON);
+	log_setverbose(0);
 
 	TEST_START("fuzz generic header");
 	ASSERT_PTR_NE(data = ibuf_new(cookies, sizeof(cookies)), NULL);

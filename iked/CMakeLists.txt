@@ -25,6 +25,9 @@ set(SRCS)
 set(CFLAGS)
 list(APPEND CFLAGS
 	-O2
+	-fstack-protector-strong
+	-fPIE
+	-D_FORTIFY_SOURCE=2
 	-Wall
 	-Wno-pointer-sign
 	-Wno-deprecated-declarations
@@ -98,16 +101,32 @@ add_executable(iked ${SRCS})
 
 target_compile_options(iked PRIVATE ${CFLAGS})
 target_compile_options(iked-shared PRIVATE ${CFLAGS})
+if(HAVE_LD_Z)
+	target_link_options(iked PRIVATE "LINKER:-z,relro,-z,now")
+endif()
 
 target_include_directories(iked PRIVATE ${INC_DIRS})
 target_include_directories(iked-shared PRIVATE ${INC_DIRS})
 
-target_link_libraries(iked-shared
-	PRIVATE util event crypto ssl compat
-)
-target_link_libraries(iked
-	PRIVATE util event crypto ssl compat iked-shared
-)
+if(CLUSTERFUZZ)
+	target_link_libraries(iked-shared
+        	"-lm -Wl,-Bstatic -lssl -lcrypto -levent -Wl,-Bdynamic" compat
+	)
+else()
+	target_link_libraries(iked-shared
+		PRIVATE util event crypto ssl compat
+	)
+endif()
+
+if(WITH_APPARMOR)
+	target_link_libraries(iked
+		PRIVATE util event crypto ssl compat iked-shared apparmor
+	)
+else()
+	target_link_libraries(iked
+		PRIVATE util event crypto ssl compat iked-shared
+	)
+endif()
 
 add_custom_command(
 	OUTPUT parse.c
@@ -138,6 +157,11 @@ install(FILES ${CMAKE_SOURCE_DIR}/iked.conf
 )
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/iked.conf.5 DESTINATION ${CMAKE_INSTALL_MANDIR}/man5/)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/iked.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8/)
+if(WITH_APPARMOR)
+	install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../contrib/iked.apparmor
+		DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/apparmor.d/
+		RENAME usr.sbin.iked)
+endif()
 install(DIRECTORY DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iked/ca)
 install(DIRECTORY DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iked/certs)
 install(DIRECTORY DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/iked/crls)

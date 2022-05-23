@@ -1,4 +1,4 @@
-#	$OpenBSD: Makefile,v 1.28 2020/12/17 00:51:12 bluhm Exp $
+#	$OpenBSD: Makefile,v 1.34 2021/12/21 13:50:35 tobhe Exp $
 
 # Copyright (c) 2020 Tobias Heider <tobhe@openbsd.org>
 #
@@ -35,10 +35,11 @@ TEST_FLOWS = \
 	_ret=1; \
 	count=0; \
 	dynamic=${RIGHT_ADDR}; \
-	if [ "$$config_address" = true ]; then \
-		dynamic="172.16.13.37"; \
+	if [ -n "$$config_address" ]; then \
+		dynamic="172.16.13.[0-9]+"; \
 	fi; \
-	while [[ $$count -le 3 ]]; do \
+	[ -z "$$maxwait" ] && maxwait=3; \
+	while [[ $$count -le $$maxwait ]]; do \
 		ipsecctlleft=`ssh ${LEFT_SSH} ipsecctl -sa`; \
 		ipsecctlright=`ssh ${RIGHT_SSH} ipsecctl -sa`; \
 		flowleft=`echo "$$ipsecctlleft" \
@@ -113,16 +114,27 @@ SETUP_CONFIG = \
 	if [ "$$singleikesa" = true ]; then \
 		global="$${global}set enforcesingleikesa\n"; \
 	fi; \
+	if [ "$$intermediate" = true ]; then \
+		global="$${global}set cert_partial_chain\n"; \
+	fi; \
 	confstr=""; \
-	if [ "$$config_address" = true ]; then \
+	if [ -n "$$config_address" ]; then \
 		if [ "$$side" = left ]; then \
 			mode=passive; \
-			confstr="config address 172.16.13.36/31"; \
-			to="dynamic"; \
+			confstr="config address $$config_address"; \
+			if [[ "$$config_address" == */* ]]; then \
+				to="dynamic"; \
+			else \
+				to="$$config_address"; \
+			fi; \
 		else \
 			mode=active; \
 			confstr="request address any"; \
-			from="dynamic"; \
+			if [[ "$$config_address" == */* ]]; then \
+				from="dynamic"; \
+			else \
+				from="$$config_address"; \
+			fi; \
 		fi; \
 	fi; \
 	echo "MODE=\"$$mode\"" >> $@_$$side.conf; \
@@ -136,6 +148,7 @@ SETUP_CONFIG = \
 	echo "DSTID=\"$$dstid\"" >> $@_$$side.conf; \
 	echo "AUTH=\"$$authstr\"" >> $@_$$side.conf; \
 	echo "CONFIG=\"$$confstr\"" >> $@_$$side.conf; \
+	echo "IKESA=\"$$ikesa\"" >> $@_$$side.conf; \
 	echo "$$global" >> $@_$$side.conf; \
 	cat ${.CURDIR}/iked.in >> $@_$$side.conf
 
@@ -182,6 +195,16 @@ SETUP_CERT = \
 	     -req -in $$name-from-$$caname.csr -CA $$caname.crt -CAkey $$caname.key \
 	     -CAcreateserial -out $$name-from-$$caname.crt
 
+SETUP_INTERMEDIATE = \
+	echo "ALTNAME = $$name-from-$$caname" > $$name-from-$$caname.cnf; \
+	cat ${.CURDIR}/crt.in >> $$name-from-$$caname.cnf; \
+	openssl genrsa -out $$name-from-$$caname.key 2048; \
+	openssl req -config $$name-from-$$caname.cnf -new -key $$name-from-$$caname.key -nodes \
+	    -out $$name-from-$$caname.csr; \
+	openssl x509 -extfile $$name-from-$$caname.cnf -extensions v3_intermediate_ca \
+	    -req -in $$name-from-$$caname.csr -CA $$caname.crt -CAkey $$caname.key \
+	    -CAcreateserial -out $$name-from-$$caname.crt
+
 SETUP_CA = \
 	openssl genrsa -out $$caname.key 2048; \
 	openssl req -subj "/C=DE/ST=Bavaria/L=Munich/O=iked/CN=$$caname" \
@@ -198,17 +221,28 @@ cleanup:
 	    rm -f /tmp/pf.conf; pfctl -d; pfctl -f /etc/pf.conf;'
 
 setup_certs: ca-both.crt left-from-ca-both.crt left.key right-from-ca-both.crt \
-    right.key ca-left.crt right-from-ca-left.crt ca-right.crt left-from-ca-right.crt
+    right.key ca-left.crt right-from-ca-left.crt ca-right.crt left-from-ca-right.crt \
+    ca-none.crt left-from-ca-none.crt right-from-ca-none.crt \
+    intermediate-from-ca-none.crt left-from-intermediate-from-ca-none.crt \
+    right-from-intermediate-from-ca-none.crt
 	echo "cd /etc/iked\n \
 	    put left-from-ca-both.crt certs\n \
 	    put left-from-ca-right.crt certs\n \
+	    put left-from-ca-none.crt certs\n \
+	    put left-from-intermediate-from-ca-none.crt certs\n \
+	    put right-from-ca-none.crt certs\n \
 	    put left.key private/local.key\n \
+	    put intermediate-from-ca-none.crt ca\n \
 	    put ca-left.crt ca\n \
 	    put ca-both.crt ca\n" | sftp ${LEFT_SSH} -q; \
 	echo "cd /etc/iked\n \
 	    put right-from-ca-both.crt certs\n \
 	    put right-from-ca-left.crt certs\n \
+	    put right-from-ca-none.crt certs\n \
+	    put right-from-intermediate-from-ca-none.crt certs\n \
+	    put left-from-ca-none.crt certs\n \
 	    put right.key private/local.key\n \
+	    put intermediate-from-ca-none.crt ca\n \
 	    put ca-right.crt ca\n \
 	    put ca-both.crt ca\n" | sftp ${RIGHT_SSH} -q; \
 	ssh ${LEFT_SSH} "openssl rsa -in /etc/iked/private/local.key -pubout > /etc/iked/local.pub"; \
@@ -251,6 +285,26 @@ ca-right.crt ca-right.key:
 left-from-ca-right.crt left.key: ca-right.crt ca-right.key
 	caname=ca-right; name=left; ${SETUP_CERT}
 
+ca-none.crt ca-none.key:
+	caname=ca-none; ${SETUP_CA}
+
+left-from-ca-none.crt left.key: ca-none.crt ca-none.key
+	caname=ca-none; name=left; ${SETUP_CERT}
+
+right-from-ca-none.crt right.key: ca-none.crt ca-none.key
+	caname=ca-none; name=right; ${SETUP_CERT}
+
+intermediate-from-ca-none.crt intermediate-from-ca-none.key:
+	caname=ca-none name=intermediate; ${SETUP_INTERMEDIATE}
+
+left-from-intermediate-from-ca-none.crt left.key: \
+     intermediate-from-ca-none.crt intermediate-from-ca-none.key
+	caname=intermediate-from-ca-none; name=left; ${SETUP_CERT}
+
+right-from-intermediate-from-ca-none.crt right.key: \
+     intermediate-from-ca-none.crt intermediate-from-ca-none.key
+	caname=intermediate-from-ca-none; name=right; ${SETUP_CERT}
+
 REGRESS_TARGETS = run-ping-fail
 run-ping-fail:
 	ssh ${LEFT_SSH} "ipsecctl -F; pkill iked || true"
@@ -276,15 +330,35 @@ run-cert-single-ca-asn1dn:
 	flowtype=esp; ${TEST_FLOWS}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
 	${TEST_PING}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
 
+REGRESS_TARGETS += run-cert-no-ca
+run-cert-no-ca:
+	leftid=left-from-ca-none; \
+	rightid=right-from-ca-none; \
+	    ${SETUP_CONFIGS}
+	${SETUP_START}
+	flowtype=esp; ${TEST_FLOWS}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
+	${TEST_PING}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
+
 REGRESS_TARGETS += run-config-address
 run-config-address:
 	flowtype=esp; \
-	config_address=true; \
+	config_address=172.16.13.36; \
 	leftid=left-from-ca-both; \
 	rightid=right-from-ca-both; \
 	    ${SETUP_CONFIGS}
 	${SETUP_START}
-	config_address=true; \
+	config_address=172.16.13.36; \
+	flowtype=esp; ${TEST_FLOWS}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
+
+REGRESS_TARGETS += run-config-address-pool
+run-config-address-pool:
+	flowtype=esp; \
+	config_address=172.16.13.36/31; \
+	leftid=left-from-ca-both; \
+	rightid=right-from-ca-both; \
+	    ${SETUP_CONFIGS}
+	${SETUP_START}
+	config_address=172.16.13.36/31; \
 	flowtype=esp; ${TEST_FLOWS}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
 
 REGRESS_TARGETS += run-dstid-fail
@@ -348,6 +422,26 @@ run-dstid-multi:
 	flowtype=esp; ${TEST_FLOWS}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
 	${TEST_PING}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
 
+REGRESS_TARGETS += run-srcid-multi
+run-srcid-multi:
+	flowtype=esp; \
+	leftid=left-from-ca-both; \
+	rightid=right-from-ca-both; \
+	    side=left; srcid=$$leftid; local=${LEFT_ADDR}; peer=${RIGHT_ADDR}; \
+	    dstid="dstid $$rightid"; \
+	    ${SETUP_CONFIG}; \
+	    side=right; mode=passive; srcid="borked"; local=${RIGHT_ADDR}; \
+	    peer=${LEFT_ADDR}; dstid=""; \
+	    ${SETUP_CONFIG}; \
+	    srcid=$$rightid; \
+	    ${SETUP_CONFIG}; \
+	    srcid="roflol"; \
+	    ${SETUP_CONFIG}; \
+	    ${DEPLOY_CONFIGS}
+	${SETUP_START}
+	flowtype=esp; ${TEST_FLOWS}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
+	${TEST_PING}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
+
 REGRESS_TARGETS += run-cert-multi-ca
 run-cert-multi-ca:
 	flowtype=esp; \
@@ -368,15 +462,43 @@ run-cert-second-altname:
 	flowtype=esp; ${TEST_FLOWS}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
 	${TEST_PING}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
 
+REGRESS_TARGETS += run-invalid-ke
+run-invalid-ke:
+	flowtype=esp; \
+	leftid=left-from-ca-both; \
+	rightid=right-from-ca-both; \
+	    side=left; srcid=$$leftid; local=${LEFT_ADDR}; peer=${RIGHT_ADDR}; \
+	    dstid="dstid $$rightid"; \
+	    ikesa="ikesa group ecp256 group curve25519"; \
+	    ${SETUP_CONFIG}; \
+	    side=right; mode=passive; srcid=$$rightid; local=${RIGHT_ADDR}; \
+	    peer=${LEFT_ADDR}; dstid="dstid $$leftid"; \
+	    ikesa="ikesa group curve25519"; \
+	    ${SETUP_CONFIG}; \
+	    ${DEPLOY_CONFIGS}
+	${SETUP_START}
+	flowtype=esp; maxwait=6; ${TEST_FLOWS}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
+	${TEST_PING}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
+
 REGRESS_TARGETS += run-psk-fail
 run-psk-fail:
 	auth=psk; \
 	leftid=left-from-ca-both; \
 	rightid=right-from-ca-both; \
 	flowtype=esp; \
-	    side=left; psk=`openssl rand -hex 20`; \
+	    side=left; \
+	    srcid=$$leftid; \
+	    local=${LEFT_ADDR}; \
+	    peer=${RIGHT_ADDR}; \
+	    dstid="dstid $$rightid"; \
+	    psk=`openssl rand -hex 20`; \
 	    ${SETUP_CONFIG}; \
-	    side=right; psk=`openssl rand -hex 20`; \
+	    side=right; \
+	    srcid=$$rightid; \
+	    local=${RIGHT_ADDR}; \
+	    peer=${LEFT_ADDR}; \
+	    dstid="dstid $$leftid"; \
+	    psk=`openssl rand -hex 20`; \
 	    ${SETUP_CONFIG}; \
 	    ${DEPLOY_CONFIGS}
 	${SETUP_START}
@@ -395,6 +517,25 @@ run-psk:
 	if [[ $$_ret -ne 0 ]]; then exit 1; fi
 	${TEST_PING}; \
 	if [[ $$_ret -ne 0 ]]; then exit 1; fi
+
+REGRESS_TARGETS += run-intermediate-fail
+run-intermediate-fail:
+	leftid=left-from-intermediate-from-ca-none; \
+	rightid=right-from-intermediate-from-ca-none; \
+	    ${SETUP_CONFIGS}
+	${SETUP_START}
+	flowtype=esp; ${TEST_FLOWS}; if [[ $$_ret -ne 1 ]]; then exit 1; fi
+	${TEST_PING}; if [[ $$_ret -ne 1 ]]; then exit 1; fi
+
+REGRESS_TARGETS += run-intermediate
+run-intermediate:
+	intermediate=true; \
+	leftid=left-from-intermediate-from-ca-none; \
+	rightid=right-from-intermediate-from-ca-none; \
+	    ${SETUP_CONFIGS}
+	${SETUP_START}
+	if [[ $$_ret -ne 0 ]]; then exit 1; fi
+	${TEST_PING}; if [[ $$_ret -ne 0 ]]; then exit 1; fi
 
 REGRESS_TARGETS += run-fragmentation
 run-fragmentation:

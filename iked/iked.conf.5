@@ -1,4 +1,4 @@
-.\" $OpenBSD: iked.conf.5,v 1.86 2021/08/03 12:46:30 tobhe Exp $
+.\" $OpenBSD: iked.conf.5,v 1.93 2022/04/13 11:06:15 tobhe Exp $
 .\"
 .\" Copyright (c) 2010 - 2014 Reyk Floeter <reyk@openbsd.org>
 .\" Copyright (c) 2004 Mathieu Sauve-Frankel  All rights reserved.
@@ -15,7 +15,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: August 3 2021 $
+.Dd $Mdocdate: April 13 2022 $
 .Dt IKED.CONF 5
 .Os
 .Sh NAME
@@ -92,6 +92,16 @@ Additional configuration files can be included with the
 keyword, for example:
 .Bd -literal -offset indent
 include "/etc/macros.conf"
+.Ed
+.Pp
+Certain parameters can be expressed as lists, in which case
+.Xr iked 8
+generates all the necessary flow combinations.
+For example:
+.Bd -literal -offset indent
+ikev2 esp proto { tcp, udp } \e
+	from 192.168.1.1 to 10.0.0.18 \e
+	peer 192.168.10.1
 .Ed
 .Sh MACROS
 Macros can be defined that will later be expanded in context.
@@ -187,8 +197,7 @@ Enable OCSP and set the fallback URL of the OCSP responder.
 This fallback will be used if the trusted CA from
 .Pa /etc/iked/ca/
 does not have an OCSP-URL extension.
-Please note that the matching responder certificates
-have to be placed in
+The matching responder certificates have to be placed in
 .Pa /etc/iked/ocsp/responder.crt .
 .Pp
 The optional
@@ -221,7 +230,7 @@ and the
 and
 .Ar password
 arguments.
-Note that the password has to be specified in plain text which is
+The password has to be specified in plain text which is
 required to support different challenge-based EAP methods like
 EAP-MD5 or EAP-MSCHAPv2.
 .El
@@ -245,7 +254,7 @@ the connection, the default action is to ignore the connection attempt or
 to use the
 .Ar default
 policy, if set.
-Please also see the
+See the
 .Sx EXAMPLES
 section for a detailed example of the policy evaluation.
 .Pp
@@ -350,11 +359,17 @@ which can be either
 .Ar inet
 or
 .Ar inet6 .
-Note that this only matters for IKEv2 endpoints and does not
+This only matters for IKEv2 endpoints and does not
 restrict the traffic selectors to negotiate flows with different
 address families, e.g. IPv6 flows negotiated by IPv4 endpoints.
 .Pp
-.It Ic proto Ar protocol
+.It Xo
+.Ic proto Ar protocol
+.Xc
+.It Xo
+.Ic proto
+.Ic { Ar protocol ... Ic }
+.Xc
 The optional
 .Ic proto
 parameter restricts the flow to a specific IP protocol.
@@ -367,6 +382,14 @@ For a list of all the protocol name to number mappings used by
 .Xr iked 8 ,
 see the file
 .Pa /etc/protocols .
+.Pp
+Multiple
+.Ar protocol
+entries can be specified, separated by commas or whitespace,
+if enclosed in curly brackets:
+.Bd -literal -offset indent
+proto { tcp, udp }
+.Ed
 .Pp
 .It Ic rdomain Ar number
 Specify a different routing domain for unencrypted traffic.
@@ -602,7 +625,7 @@ and
 .Ql G
 for kilo-, mega- and gigabytes accordingly.
 .Pp
-Please note that rekeying must happen at least several times a day as
+Rekeying must happen at least several times a day as
 IPsec security heavily depends on frequent key renewals.
 .Pp
 .It Op Ar ikeauth
@@ -679,7 +702,8 @@ The address of an internal remote access server.
 .El
 .Pp
 .It Ic iface Ar interface
-Configure requested addresses and routes on the specified
+Enable automatic network configuration as initiator.
+Received addresses, routes and nameservers will be installed on the specified
 .Ar interface .
 .Pp
 .It Ic tag Ar string
@@ -971,22 +995,13 @@ can only be used with the
 .Ic childsa
 keyword.
 .Pp
-3DES requires 24 bytes to form its 168-bit key.
-This is because the most significant bit of each byte is used for parity.
-.Pp
-The keysize of AES-CTR is actually 128-bit.
-However as well as the key, a 32-bit nonce has to be supplied.
-Thus 160 bits of key material have to be supplied.
-The same applies to AES-GCM, AES-GMAC and Chacha20-Poly1305,
-however in the latter case the keysize is 256 bit.
-.Pp
 Using AES-GMAC or NULL with ESP will only provide authentication.
 This is useful in setups where AH cannot be used, e.g. when NAT is involved.
 .Pp
 The following group types are permitted with the
 .Ic group
 keyword:
-.Bl -column "brainpool224" "Group" "Size" "Curve25519" "Default" -offset indent
+.Bl -column "sntrup761x25519" "Group" "1190 B" "Hybrid PQKE" "Default" -offset indent
 .It Em Name Ta Em Group Ta Em Size Ta Em Type Ta Em Default
 .It Li modp768 Ta grp1 Ta 768 Ta "MODP" Ta "" Ta "[insecure]"
 .It Li modp1024 Ta grp2 Ta 1024 Ta "MODP" Ta "x" Ta "[weak]"
@@ -1006,13 +1021,14 @@ keyword:
 .It Li brainpool384 Ta grp29 Ta 384 Ta "ECP" Ta ""
 .It Li brainpool512 Ta grp30 Ta 512 Ta "ECP" Ta ""
 .It Li curve25519 Ta grp31 Ta 256 Ta "Curve25519" Ta "x"
+.It Li sntrup761x25519 Ta "" Ta 1190 B Ta "Hybrid PQKE" Ta ""
 .El
 .Pp
 The currently supported group types are either
 MODP (exponentiation groups modulo a prime),
 ECP (elliptic curve groups modulo a prime),
 or Curve25519.
-Please note that MODP groups of less than 2048 bits are considered
+MODP groups of less than 2048 bits are considered
 as weak or insecure (see RFC 8247 section 2.4) and only provided for
 backwards compatibility.
 .Sh FILES
@@ -1046,13 +1062,13 @@ ikev2 "big test" \e
 	from 192.168.1.1 to 192.168.2.2 \e
 	peer any local any \e
 	ikesa \e
-		enc 3des auth hmac-sha2-256 \e
-		group ecp256 group modp1024 \e
+		enc aes-128-gcm \e
+		group ecp256 group curve25519 \e
 	ikesa \e
-		enc 3des auth hmac-sha1 \e
-		group ecp256 group modp1024 \e
-	childsa enc aes-128 auth hmac-sha2-256 \e
-	childsa enc aes-128 auth hmac-sha1 \e
+		enc aes-128 auth hmac-sha2-256 \e
+		group ecp256 group curve25519 \e
+	childsa enc aes-128-gcm \e
+	childsa enc aes-128 auth hmac-sha2-256  \e
 	srcid host.example.com \e
 	dstid 192.168.0.254 \e
 	psk "foobar"

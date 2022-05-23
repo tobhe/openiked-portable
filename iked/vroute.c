@@ -1,4 +1,4 @@
-/*	$OpenBSD: vroute.c,v 1.14 2021/09/06 13:29:17 tobhe Exp $	*/
+/*	$OpenBSD: vroute.c,v 1.16 2022/03/16 18:17:20 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2021 Tobias Heider <tobhe@openbsd.org>
@@ -40,7 +40,7 @@
 
 #define ROUNDUP(a) (a>0 ? (1 + (((a) - 1) | (sizeof(long) - 1))) : sizeof(long))
 
-int vroute_setroute(struct iked *, uint8_t, struct sockaddr *, uint8_t,
+int vroute_setroute(struct iked *, uint32_t, struct sockaddr *, uint8_t,
     struct sockaddr *, int);
 int vroute_doroute(struct iked *, int, int, int, uint8_t, struct sockaddr *,
     struct sockaddr *, struct sockaddr *, int *);
@@ -442,14 +442,14 @@ vroute_insertdns(struct iked *env, int ifidx, struct sockaddr *addr)
 {
 	struct iked_vroute_sc	*ivr = env->sc_vroute;
 	struct vroute_dns	*dns;
-	
+
 	dns = calloc(1, sizeof(*dns));
 	if (dns == NULL)
 		fatalx("%s: calloc.", __func__);
 
 	memcpy(&dns->vd_addr, addr, addr->sa_len);
 	dns->vd_ifidx = ifidx;
-	
+
 	ivr->ivr_dns = dns;
 }
 
@@ -528,7 +528,7 @@ vroute_setdelroute(struct iked *env, uint8_t rdomain, struct sockaddr *dst,
 }
 
 int
-vroute_setroute(struct iked *env, uint8_t rdomain, struct sockaddr *dst,
+vroute_setroute(struct iked *env, uint32_t rdomain, struct sockaddr *dst,
     uint8_t mask, struct sockaddr *addr, int type)
 {
 	struct sockaddr_storage	 sa;
@@ -590,7 +590,7 @@ vroute_getroute(struct iked *env, struct imsg *imsg)
 	size_t			 left;
 	int			 addrs = 0;
 	int			 type, flags;
-	uint8_t			 rdomain;
+	uint32_t		 rdomain;
 
 	ptr = (uint8_t *)imsg->data;
 	left = IMSG_DATA_SIZE(imsg);
@@ -667,7 +667,7 @@ vroute_getcloneroute(struct iked *env, struct imsg *imsg)
 	struct sockaddr_storage	 addr;
 	uint8_t			*ptr;
 	size_t			 left;
-	uint8_t			 rdomain;
+	uint32_t		 rdomain;
 	int			 flags;
 	int			 addrs;
 	int			 need_gw;
