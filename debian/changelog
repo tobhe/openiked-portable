@@ -1,3 +1,10 @@
+openiked (7.1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Bump copyright years
+
+ -- Ryan Kavanagh <rak@debian.org>  Mon, 23 May 2022 14:28:57 -0400
+
 openiked (7.0-1) unstable; urgency=medium
 
   * New upstream release
