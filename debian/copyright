@@ -24,11 +24,12 @@ Copyright: 1996      David Mazieres <dm@uun.org>
            2012      Darren Tucker (dtucker at zip com au)
            2012      Matthew Dempsky <matthew@openbsd.org>
            2016      Marcel Moolenaar <marcel@FreeBSD.org>
-           2019-2021 Tobias Heider <tobhe@openbsd.org>
+           2019-2022 Tobias Heider <tobhe@openbsd.org>
+           2022      David Linder
 License: ISC
 
 Files: debian/*
-Copyright: 2021 Ryan Kavanagh <rak@debian.org>
+Copyright: 2021-2022 Ryan Kavanagh <rak@debian.org>
 License: ISC
 
 Files: iked/chap_ms.c
