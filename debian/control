@@ -2,6 +2,7 @@ Source: openiked
 Section: net
 Priority: optional
 Maintainer: Ryan Kavanagh <rak@debian.org>
+Uploaders: Tobias Heider <me@tobhe.de>
 Build-Depends: bison,
                cmake,
                debhelper-compat (= 13),
