@@ -1,4 +1,4 @@
-/*	$OpenBSD: ikev2_pld.c,v 1.118 2021/09/01 15:30:06 tobhe Exp $	*/
+/*	$OpenBSD: ikev2_pld.c,v 1.123 2022/03/14 12:58:55 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2019 Tobias Heider <tobias.heider@stusta.de>
@@ -759,14 +759,17 @@ ikev2_pld_id(struct iked *env, struct ikev2_payload *pld,
 		return (0);
 	}
 
-	if (!((sa->sa_hdr.sh_initiator && payload == IKEV2_PAYLOAD_IDr) ||
-	    (!sa->sa_hdr.sh_initiator && payload == IKEV2_PAYLOAD_IDi))) {
+	if (((sa->sa_hdr.sh_initiator && payload == IKEV2_PAYLOAD_IDr) ||
+	    (!sa->sa_hdr.sh_initiator && payload == IKEV2_PAYLOAD_IDi)))
+		idp = &msg->msg_parent->msg_peerid;
+	else if (!sa->sa_hdr.sh_initiator && payload == IKEV2_PAYLOAD_IDr)
+		idp = &msg->msg_parent->msg_localid;
+	else {
 		ibuf_release(idb.id_buf);
 		log_debug("%s: unexpected id payload", __func__);
 		return (0);
 	}
 
-	idp = &msg->msg_parent->msg_id;
 	if (idp->id_type) {
 		ibuf_release(idb.id_buf);
 		log_debug("%s: duplicate id payload", __func__);
@@ -1058,7 +1061,7 @@ ikev2_pld_notify(struct iked *env, struct ikev2_payload *pld,
 			return (-1);
 		}
 		if (ikev2_nat_detection(env, msg, md, sizeof(md), type,
-		     ikev2_msg_frompeer(msg)) == -1)
+		    ikev2_msg_frompeer(msg)) == -1)
 			return (-1);
 		if (memcmp(buf, md, left) != 0) {
 			log_debug("%s: %s detected NAT", __func__,
@@ -1335,7 +1338,7 @@ ikev2_pld_notify(struct iked *env, struct ikev2_payload *pld,
 		if (left < sizeof(signature_hash) ||
 		    left % sizeof(signature_hash)) {
 			log_debug("%s: malformed signature hash notification"
-			     "(%zu bytes)", __func__, left);
+			    "(%zu bytes)", __func__, left);
 			return (0);
 		}
 		while (left >= sizeof(signature_hash)) {
@@ -1604,7 +1607,7 @@ ikev2_pld_ef(struct iked *env, struct ikev2_payload *pld,
 	uint8_t				*buf;
 	struct ibuf			*e = NULL;
 	size_t				 frag_num, frag_total;
-	size_t			 	 len;
+	size_t				 len;
 	int				 ret = -1;
 	ssize_t				 elen;
 
@@ -1631,32 +1634,13 @@ ikev2_pld_ef(struct iked *env, struct ikev2_payload *pld,
 		goto done;
 	}
 	log_debug("%s: Received fragment: %zu of %zu",
-	     __func__, frag_num, frag_total);
+	    __func__, frag_num, frag_total);
 
-	/* Check new fragmented message */
-	if (sa_frag->frag_arr == NULL) {
-		sa_frag->frag_arr = recallocarray(NULL, 0, frag_total,
-		    sizeof(struct iked_frag_entry*));
-		if (sa_frag->frag_arr == NULL) {
-			log_info("%s: recallocarray sa_frag->frag_arr.", __func__);
-			goto done;
-		}
-		sa_frag->frag_total = frag_total;
-	}
-
-	/* Drop all fragments if frag_num or frag_total don't match */
-	if (frag_num > sa_frag->frag_total || frag_total != sa_frag->frag_total)
-		goto dropall;
-
-	/* Silent drop if fragment already stored */
-	if (sa_frag->frag_arr[frag_num-1] != NULL)
+	/* Drop fragment if frag_num and frag_total don't match */
+	if (frag_num > frag_total)
 		goto done;
 
-	/* The first fragments IKE header determines pld_nextpayload */
-	if (frag_num == 1)
-		sa_frag->frag_nextpayload = pld->pld_nextpayload;
-
-        /* Decrypt fragment */
+	/* Decrypt fragment */
 	if ((e = ibuf_new(buf, len)) == NULL)
 		goto done;
 
@@ -1667,6 +1651,29 @@ ikev2_pld_ef(struct iked *env, struct ikev2_payload *pld,
 		goto done;
 	}
 	elen = ibuf_length(e);
+
+	/* Check new fragmented message */
+	if (sa_frag->frag_arr == NULL) {
+		sa_frag->frag_arr = recallocarray(NULL, 0, frag_total,
+		    sizeof(struct iked_frag_entry*));
+		if (sa_frag->frag_arr == NULL) {
+			log_info("%s: recallocarray sa_frag->frag_arr.", __func__);
+			goto done;
+		}
+		sa_frag->frag_total = frag_total;
+	} else {
+		/* Drop all fragments if frag_total doesn't match previous */
+		if (frag_total != sa_frag->frag_total)
+			goto dropall;
+
+		/* Silent drop if fragment already stored */
+		if (sa_frag->frag_arr[frag_num-1] != NULL)
+			goto done;
+	}
+
+	/* The first fragments IKE header determines pld_nextpayload */
+	if (frag_num == 1)
+		sa_frag->frag_nextpayload = pld->pld_nextpayload;
 
 	/* Insert new list element */
 	el = calloc(1, sizeof(struct iked_frag_entry));
@@ -1743,6 +1750,12 @@ ikev2_frags_reassemble(struct iked *env, struct ikev2_payload *pld,
 	log_debug("%s: Defragmented length %zd", __func__,
 	    sa_frag->frag_total_size);
 	print_hex(ibuf_data(e), 0,  sa_frag->frag_total_size);
+
+	/* Drop the original request's packets from the retransmit queue */
+	if (msg->msg_response)
+		ikev2_msg_dispose(env, &msg->msg_sa->sa_requests,
+		    ikev2_msg_lookup(env, &msg->msg_sa->sa_requests, msg,
+		    msg->msg_exchange));
 
 	/*
 	 * Parse decrypted payload

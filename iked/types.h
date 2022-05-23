@@ -1,4 +1,4 @@
-/*	$OpenBSD: types.h,v 1.45 2021/09/01 15:30:06 tobhe Exp $	*/
+/*	$OpenBSD: types.h,v 1.48 2022/04/13 20:54:55 deraadt Exp $	*/
 
 /*
  * Copyright (c) 2019 Tobias Heider <tobias.heider@stusta.de>
@@ -63,12 +63,13 @@
 #define IKED_PSK_SIZE		1024	/* XXX should be dynamic */
 #define IKED_MSGBUF_MAX		8192
 #define IKED_CFG_MAX		16	/* maximum CP attributes */
+#define IKED_IPPROTO_MAX	16
 #define IKED_TAG_SIZE		64
 #define IKED_CYCLE_BUFFERS	8	/* # of static buffers for mapping */
 #define IKED_PASSWORD_SIZE	256	/* limited by most EAP types */
 
-#define IKED_LIFETIME_BYTES	4294967296 /* 4 GB */
-#define IKED_LIFETIME_SECONDS	10800	  /* 3 hours */
+#define IKED_LIFETIME_BYTES	4294967296ULL	/* 4 GB */
+#define IKED_LIFETIME_SECONDS	10800	  	/* 3 hours */
 
 #define IKED_E			0x1000	/* Decrypted flag */
 
@@ -125,7 +126,8 @@ enum imsg_type {
 	IMSG_OCSP_CFG,
 	IMSG_AUTH,
 	IMSG_PRIVKEY,
-	IMSG_PUBKEY
+	IMSG_PUBKEY,
+	IMSG_CTL_SHOW_CERTSTORE
 };
 
 enum privsep_procid {

@@ -1,4 +1,4 @@
-/*	$OpenBSD: crypto.c,v 1.34 2021/02/25 20:13:24 tobhe Exp $	*/
+/*	$OpenBSD: crypto.c,v 1.39 2021/12/13 17:35:34 tobhe Exp $	*/
 
 /*
  * Copyright (c) 2020-2021 Tobias Heider <tobhe@openbsd.org>
@@ -17,7 +17,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <sys/param.h>	/* roundup */
+#include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -320,8 +320,7 @@ hash_free(struct iked_hash *hash)
 {
 	if (hash == NULL)
 		return;
-	if (hash->hash_ctx != NULL)
-		HMAC_CTX_free(hash->hash_ctx);
+	HMAC_CTX_free(hash->hash_ctx);
 	ibuf_release(hash->hash_key);
 	free(hash);
 }
@@ -552,10 +551,7 @@ cipher_free(struct iked_cipher *encr)
 {
 	if (encr == NULL)
 		return;
-	if (encr->encr_ctx != NULL) {
-		EVP_CIPHER_CTX_cleanup(encr->encr_ctx);
-		free(encr->encr_ctx);
-	}
+	EVP_CIPHER_CTX_free(encr->encr_ctx);
 	ibuf_release(encr->encr_iv);
 	ibuf_release(encr->encr_key);
 	free(encr);
@@ -642,8 +638,8 @@ cipher_final(struct iked_cipher *encr)
 
 	/*
 	 * We always have EVP_CIPH_NO_PADDING set.  This means arg
-         * out is not used and olen should always be 0.
-         */
+	 * out is not used and olen should always be 0.
+	 */
 	if (EVP_CipherFinal_ex(encr->encr_ctx, NULL, &olen) != 1) {
 		ca_sslerror(__func__);
 		return (-1);
@@ -768,9 +764,8 @@ dsa_free(struct iked_dsa *dsa)
 	if (dsa->dsa_hmac) {
 		HMAC_CTX_free((HMAC_CTX *)dsa->dsa_ctx);
 	} else {
-		EVP_MD_CTX_destroy((EVP_MD_CTX *)dsa->dsa_ctx);
-		if (dsa->dsa_key)
-			EVP_PKEY_free(dsa->dsa_key);
+		EVP_MD_CTX_free((EVP_MD_CTX *)dsa->dsa_ctx);
+		EVP_PKEY_free(dsa->dsa_key);
 	}
 
 	ibuf_release(dsa->dsa_keydata);
@@ -846,8 +841,7 @@ dsa_setkey(struct iked_dsa *dsa, void *key, size_t keylen, uint8_t type)
 		goto err;
 	}
 
-	if (cert != NULL)
-		X509_free(cert);
+	X509_free(cert);
 	BIO_free(rawcert);	/* temporary for parsing */
 
 	return (dsa->dsa_keydata);
@@ -857,16 +851,11 @@ dsa_setkey(struct iked_dsa *dsa, void *key, size_t keylen, uint8_t type)
  err:
 	log_debug("%s: error", __func__);
 
-	if (rsa != NULL)
-		RSA_free(rsa);
-	if (ec != NULL)
-		EC_KEY_free(ec);
-	if (pkey != NULL)
-		EVP_PKEY_free(pkey);
-	if (cert != NULL)
-		X509_free(cert);
-	if (rawcert != NULL)
-		BIO_free(rawcert);
+	RSA_free(rsa);
+	EC_KEY_free(ec);
+	EVP_PKEY_free(pkey);
+	X509_free(cert);
+	BIO_free(rawcert);
 	ibuf_release(dsa->dsa_keydata);
 	dsa->dsa_keydata = NULL;
 	return (NULL);
@@ -930,7 +919,7 @@ _dsa_verify_init(struct iked_dsa *dsa, const uint8_t *sig, size_t len)
 int
 dsa_init(struct iked_dsa *dsa, const void *buf, size_t len)
 {
-	int	 	 ret;
+	int		 ret;
 	EVP_PKEY_CTX	*pctx = NULL;
 
 	if (dsa->dsa_hmac) {
@@ -959,6 +948,8 @@ dsa_init(struct iked_dsa *dsa, const void *buf, size_t len)
 		    EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, -1) <= 0)
 			return (-1);
 	}
+	if (_dsa_sign_encode(dsa, NULL, 0, NULL) < 0)
+		return (-1);
 
 	return (ret == 1 ? 0 : -1);
 }
@@ -1080,8 +1071,8 @@ _dsa_sign_ecdsa(struct iked_dsa *dsa, uint8_t *ptr, size_t len)
 	ret = 0;
  done:
 	free(tmp);
-	if (obj)
-		ECDSA_SIG_free(obj);
+	ECDSA_SIG_free(obj);
+
 	return (ret);
 }
 
@@ -1182,8 +1173,8 @@ _dsa_verify_prepare(struct iked_dsa *dsa, uint8_t **sigp, size_t *lenp,
 	BN_clear_free(r);
 	BN_clear_free(s);
 	free(ptr);
-	if (obj)
-		ECDSA_SIG_free(obj);
+	ECDSA_SIG_free(obj);
+
 	return (ret);
 }
 

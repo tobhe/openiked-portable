@@ -7,7 +7,6 @@
  */
 
 #include <sys/socket.h>
-#include <sys/param.h>
 #include <sys/time.h>
 #include <sys/uio.h>
 
@@ -214,6 +213,19 @@ ikev2_ike_sa_setreason(struct iked_sa *sa, char *r)
 }
 
 void
+ikev2_msg_dispose(struct iked *env, struct iked_msgqueue *queue,
+    struct iked_msg_retransmit *mr)
+{
+}
+
+struct iked_msg_retransmit *
+ikev2_msg_lookup(struct iked *env, struct iked_msgqueue *queue,
+    struct iked_message *msg, uint8_t exchange)
+{
+	return NULL;
+}
+
+void
 ikev2_msg_cleanup(struct iked *env, struct iked_message *msg)
 {
 	struct iked_certreq *cr;
@@ -223,7 +235,8 @@ ikev2_msg_cleanup(struct iked *env, struct iked_message *msg)
 		ibuf_release(msg->msg_nonce);
 		ibuf_release(msg->msg_ke);
 		ibuf_release(msg->msg_auth.id_buf);
-		ibuf_release(msg->msg_id.id_buf);
+		ibuf_release(msg->msg_peerid.id_buf);
+		ibuf_release(msg->msg_localid.id_buf);
 		ibuf_release(msg->msg_cert.id_buf);
 		ibuf_release(msg->msg_cookie);
 		ibuf_release(msg->msg_cookie2);

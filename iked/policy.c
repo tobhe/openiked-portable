@@ -1,4 +1,4 @@
-/*	$OpenBSD: policy.c,v 1.84 2021/10/12 10:01:59 tobhe Exp $	*/
+/*	$OpenBSD: policy.c,v 1.89 2021/12/01 16:42:13 deraadt Exp $	*/
 
 /*
  * Copyright (c) 2020-2021 Tobias Heider <tobhe@openbsd.org>
@@ -103,14 +103,23 @@ policy_lookup(struct iked *env, struct iked_message *msg,
 		pol.pol_flags |= IKED_POLICY_TRANSPORT;
 	memcpy(&pol.pol_peer.addr, &msg->msg_peer, sizeof(msg->msg_peer));
 	memcpy(&pol.pol_local.addr, &msg->msg_local, sizeof(msg->msg_local));
-	if (msg->msg_id.id_type &&
-	    ikev2_print_id(&msg->msg_id, idstr, IKED_ID_SIZE) == 0 &&
+	if (msg->msg_peerid.id_type &&
+	    ikev2_print_id(&msg->msg_peerid, idstr, IKED_ID_SIZE) == 0 &&
 	    (s = strchr(idstr, '/')) != NULL) {
-		pol.pol_peerid.id_type = msg->msg_id.id_type;
+		pol.pol_peerid.id_type = msg->msg_peerid.id_type;
 		pol.pol_peerid.id_length = strlen(s+1);
 		strlcpy(pol.pol_peerid.id_data, s+1,
 		    sizeof(pol.pol_peerid.id_data));
 		log_debug("%s: peerid '%s'", __func__, s+1);
+	}
+	if (msg->msg_localid.id_type &&
+	    ikev2_print_id(&msg->msg_localid, idstr, IKED_ID_SIZE) == 0 &&
+	    (s = strchr(idstr, '/')) != NULL) {
+		pol.pol_localid.id_type = msg->msg_localid.id_type;
+		pol.pol_localid.id_length = strlen(s+1);
+		strlcpy(pol.pol_localid.id_data, s+1,
+		    sizeof(pol.pol_localid.id_data));
+		log_debug("%s: localid '%s'", __func__, s+1);
 	}
 
 	/* Try to find a matching policy for this message */
@@ -223,9 +232,6 @@ policy_test(struct iked *env, struct iked_policy *key)
 		else if (key->pol_af && p->pol_af &&
 		    key->pol_af != p->pol_af)
 			p = p->pol_skip[IKED_SKIP_AF];
-		else if (key->pol_ipproto && p->pol_ipproto &&
-		    key->pol_ipproto != p->pol_ipproto)
-			p = p->pol_skip[IKED_SKIP_PROTO];
 		else if (sockaddr_cmp((struct sockaddr *)&key->pol_peer.addr,
 		    (struct sockaddr *)&p->pol_peer.addr,
 		    p->pol_peer.addr_mask) != 0)
@@ -334,9 +340,6 @@ policy_calc_skip_steps(struct iked_policies *policies)
 		    prev->pol_af != AF_UNSPEC &&
 		    cur->pol_af != prev->pol_af)
 			IKED_SET_SKIP_STEPS(IKED_SKIP_AF);
-		if (cur->pol_ipproto && prev->pol_ipproto &&
-		    cur->pol_ipproto != prev->pol_ipproto)
-			IKED_SET_SKIP_STEPS(IKED_SKIP_PROTO);
 		if (IKED_ADDR_NEQ(&cur->pol_peer, &prev->pol_peer))
 			IKED_SET_SKIP_STEPS(IKED_SKIP_DST_ADDR);
 		if (IKED_ADDR_NEQ(&cur->pol_local, &prev->pol_local))
@@ -673,7 +676,7 @@ sa_address(struct iked_sa *sa, struct iked_addr *addr, struct sockaddr *peer)
 int
 sa_configure_iface(struct iked *env, struct iked_sa *sa, int add)
 {
-#if defined(HAVE_VROUTE) || defined(HAVE_VROUTE_NETLINK)
+#if defined(HAVE_VROUTE)
 	struct iked_flow	*saflow;
 	struct sockaddr		*caddr;
 	int			 rdomain;
@@ -746,7 +749,7 @@ sa_configure_iface(struct iked *env, struct iked_sa *sa, int add)
 		    sa->sa_policy->pol_iface) != 0)
 			return (-1);
 	}
-#endif /* defined(HAVE_VROUTE) || defined(HAVE_VROUTE_NETLINK) */
+#endif /* defined(HAVE_VROUTE) */
 
 	return (0);
 }
@@ -898,7 +901,7 @@ sa_dstid_remove(struct iked *env, struct iked_sa *sa)
 static __inline int
 sa_dstid_cmp(struct iked_sa *a, struct iked_sa *b)
 {
-	struct iked_id          *aid = NULL, *bid = NULL;
+	struct iked_id		*aid = NULL, *bid = NULL;
 	size_t			 alen, blen;
 	uint8_t			*aptr, *bptr;
 

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# Copyright (c) 2020 - 2021 Tobias Heider <tobhe@openbsd.org>
+# Copyright (c) 2020 - 2022 Tobias Heider <tobhe@openbsd.org>
 #
 # Permission to use, copy, modify, and distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -44,22 +44,38 @@ $right{'addr'} = $RIGHT_ADDR;
 $right{'name'} = "right";
 $left{'name'} = "left";
 
-my $tests = {
-  "test_ping" => \&test_ping,
-  "test_fragmentation" => \&test_fragmentation,
-};
+my @tests = (
+  "test_single_ca",
+  "test_single_ca_asn1dn",
+  "test_altname",
+  "test_multi_ca",
+  "test_no_ca",
+  "test_pubkey",
+  "test_psk",
+  "test_invalid_ke",
+  "test_ikesa_all",
+  "test_childsa_all",
+  "test_group_sntrup761x25519",
+  "test_transport",
+  "test_fragmentation",
+  "test_singleikesa",
+  "test_config_addr",
+  "test_config_addrpool",
+  "test_lifetime",
+  "test_dstid_fail",
+);
 
 if (defined $options{l}) {
-	print "tests:\n";
-	for (keys %$tests) {
-		print "\t" . $_ . "\n";
+	print("tests:\n");
+	for my $test (@tests) {
+		print("\t$test\n");
 	}
 	exit 0;
 }
 
-my $BUILDDIR = ($ENV{'BUILDDIR'} eq "") ? "obj" : $ENV{'BUILDDIR'};
+my $BUILDDIR = (defined $ENV{'BUILDDIR'}) ? $ENV{'BUILDDIR'} : "obj";
 if (-e $BUILDDIR and !-d $BUILDDIR) {
-	print "error: BUILDDIR is not a directory\n";
+	print("error: BUILDDIR is not a directory\n");
 	exit 1;
 }
 if (!-e $BUILDDIR) {
@@ -71,32 +87,42 @@ init_osdep(\%right);
 
 if (defined $options{s}) {
 	# Generate CAs and certs
+	setup_ca("ca-none");
 	setup_ca("ca-right");
 	setup_ca("ca-left");
 	setup_ca("ca-both");
+
 	setup_key("left");
 	setup_key("right");
+
 	setup_cert("left", "ca-both");
 	setup_cert("right", "ca-both");
-	setup_cert("left", "ca-left");
-	setup_cert("right", "ca-right");
+
+	setup_cert("right", "ca-left");
+	setup_cert("left", "ca-right");
+
+	setup_cert("right", "ca-none");
+	setup_cert("left", "ca-none");
 	deploy_certs();
 	exit 0;
 }
 
 if (defined $options{t}) {
-	if (defined $tests->{$options{t}}) {
-		$tests->{$options{t}}->();
+	if ( grep { $options{t} eq $_ } @tests ) {
+		print("$options{t}: ");
+		eval "$options{t}()";
 		cleanup();
 		exit 0;
 	}
-	print "error: no such test " . $options{t} . "\n";
+	print("error: no such test $options{t}\n");
 	exit 1;
 }
 
 # run all tests
-for (keys %$tests) {
-	$tests->{$_}->();
+for my $test (@tests) {
+	print("$test: ");
+	eval "$test()";
+	cleanup();
 }
 
 cleanup();
@@ -113,93 +139,482 @@ sub usage {
 	exit 1;
 }
 
-sub test_ping {
-	my $sub_name = (caller(0))[3];
+sub test_single_ca {
 	my %lconf = (
 		'from' => $left{'addr'},
 		'to' => $right{'addr'},
 		'srcid' => "$left{'name'}-from-ca-both",
 		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
 	);
-	setup_config("$sub_name-left", \%lconf);
-	system("chmod 0600 $BUILDDIR/$sub_name-left.conf");
-	system <<~DOC;
-	echo "cd /tmp
-	put $BUILDDIR/$sub_name-left.conf test.conf" | sftp -q $left{'ssh'} -q;
-	DOC
-
 	my %rconf = (
 		'from' => $right{'addr'},
 		'to' => $left{'addr'},
 		'srcid' => "$right{'name'}-from-ca-both",
 		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
 	);
-	setup_config("$sub_name-right", \%rconf);
-	system("chmod 0600 $BUILDDIR/$sub_name-right.conf");
-	system <<~DOC;
-	echo "cd /tmp
-	put $BUILDDIR/$sub_name-right.conf test.conf" | sftp -q $right{'ssh'} -q;
-	DOC
+	test_basic(\%lconf, \%rconf);
+}
 
-	setup_start(\%left);
-	setup_start(\%right);
+sub test_single_ca_asn1dn {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "\\\"/C=DE/ST=Bavaria/L=Munich/O=iked/CN=$left{'name'}-from-ca-both\\\"",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "\\\"/C=DE/ST=Bavaria/L=Munich/O=iked/CN=$right{'name'}-from-ca-both\\\"",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
 
-	print "FAIL" if check_ping(\%left, \%right);
+sub test_altname {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both-alternative",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both\@openbsd.org",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_multi_ca {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-right",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-left",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_no_ca {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-none",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-none",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_pubkey {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-pub",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-pub",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_psk {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-psk",
+		'auth' => "psk mekmitasdigoat",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-psk",
+		'auth' => "psk mekmitasdigoat",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_group_sntrup761x25519 {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "active",
+		'ikesa' => "ikesa group sntrup761x25519",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}.*group sntrup761x25519"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'ikesa' => "ikesa group sntrup761x25519",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}.*group sntrup761x25519"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_ikesa_all {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "active",
+		'ikesa' => "ikesa group curve25519 group brainpool512" .
+		    " group brainpool384 group brainpool256 group brainpool224" .
+		    " group ecp224 group ecp192 group ecp521 group ecp384" .
+		    " group ecp256 group modp8192 group modp6144 group modp4096" .
+		    " group modp3072 group modp2048 group modp1536 group modp1024" .
+		    " group modp768 group sntrup761x25519" .
+		    " enc aes-256-gcm-12 enc aes-128-gcm-12 enc aes-256-gcm" .
+		    " enc aes-128-gcm" .
+		    " ikesa group curve25519 group brainpool512" .
+		    " group brainpool384 group brainpool256 group brainpool224" .
+		    " group ecp224 group ecp192 group ecp521 group ecp384" .
+		    " group ecp256 group modp8192 group modp6144 group modp4096" .
+		    " group modp3072 group modp2048 group modp1536 group modp1024" .
+		    " group modp768 group sntrup761x25519" .
+		    " enc aes-256 enc aes-192 enc aes-128 enc 3des" .
+		    " auth hmac-sha2-512 auth hmac-sha2-384 auth hmac-sha2-256" .
+		    " auth hmac-sha1 auth hmac-md5",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'ikesa' => "ikesa group curve25519 group brainpool512" .
+		    " group brainpool384 group brainpool256 group brainpool224" .
+		    " group ecp224 group ecp192 group ecp521 group ecp384" .
+		    " group ecp256 group modp8192 group modp6144 group modp4096" .
+		    " group modp3072 group modp2048 group modp1536 group modp1024" .
+		    " group modp768 group sntrup761x25519" .
+		    " enc aes-256-gcm-12 enc aes-128-gcm-12 enc aes-256-gcm" .
+		    " enc aes-128-gcm" .
+		    " ikesa group curve25519 group brainpool512" .
+		    " group brainpool384 group brainpool256 group brainpool224" .
+		    " group ecp224 group ecp192 group ecp521 group ecp384" .
+		    " group ecp256 group modp8192 group modp6144 group modp4096" .
+		    " group modp3072 group modp2048 group modp1536 group modp1024" .
+		    " group modp768 group sntrup761x25519" .
+		    " enc aes-256 enc aes-192 enc aes-128 enc 3des" .
+		    " auth hmac-sha2-512 auth hmac-sha2-384 auth hmac-sha2-256" .
+		    " auth hmac-sha1 auth hmac-md5",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_childsa_all {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "active",
+		'ikesa' => "childsa group curve25519 group brainpool512" .
+		    " group brainpool384 group brainpool256 group brainpool224" .
+		    " group ecp224 group ecp192 group ecp521 group ecp384" .
+		    " group ecp256 group modp8192 group modp6144 group modp4096" .
+		    " group modp3072 group modp2048 group modp1536 group modp1024" .
+		    " group modp768 group sntrup761x25519 group none" .
+		    " enc chacha20-poly1305 enc aes-256-gcm enc aes-192-gcm" .
+		    " enc aes-128-gcm noesn esn" .
+		    " childsa group curve25519 group brainpool512" .
+		    " group brainpool384 group brainpool256 group brainpool224" .
+		    " group ecp224 group ecp192 group ecp521 group ecp384" .
+		    " group ecp256 group modp8192 group modp6144 group modp4096" .
+		    " group modp3072 group modp2048 group modp1536 group modp1024" .
+		    " group modp768 group sntrup761x25519 group none" .
+		    " enc aes-256 enc aes-192 enc aes-128 enc 3des enc aes-256-ctr" .
+		    " enc aes-192-ctr enc aes-128-ctr enc cast enc blowfish" .
+		    " auth hmac-sha2-512 auth hmac-sha2-384 auth hmac-sha2-256 auth hmac-sha1" .
+		    " auth hmac-md5 " .
+		    " prf hmac-sha2-512 prf hmac-sha2-384 prf hmac-sha2-256 prf hmac-sha1" .
+		    " prf hmac-md5 " .
+		    " noesn esn",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'ikesa' => "childsa group curve25519 group brainpool512" .
+		    " group brainpool384 group brainpool256 group brainpool224" .
+		    " group ecp224 group ecp192 group ecp521 group ecp384" .
+		    " group ecp256 group modp8192 group modp6144 group modp4096" .
+		    " group modp3072 group modp2048 group modp1536 group modp1024" .
+		    " group modp768 group sntrup761x25519 group none" .
+		    " enc chacha20-poly1305 enc aes-256-gcm enc aes-192-gcm" .
+		    " enc aes-128-gcm noesn esn" .
+		    " childsa group curve25519 group brainpool512" .
+		    " group brainpool384 group brainpool256 group brainpool224" .
+		    " group ecp224 group ecp192 group ecp521 group ecp384" .
+		    " group ecp256 group modp8192 group modp6144 group modp4096" .
+		    " group modp3072 group modp2048 group modp1536 group modp1024" .
+		    " group modp768 group sntrup761x25519 group none" .
+		    " enc aes-256 enc aes-192 enc aes-128 enc 3des enc aes-256-ctr" .
+		    " enc aes-192-ctr enc aes-128-ctr enc cast enc blowfish" .
+		    " auth hmac-sha2-512 auth hmac-sha2-384 auth hmac-sha2-256 auth hmac-sha1" .
+		    " auth hmac-md5 " .
+		    " prf hmac-sha2-512 prf hmac-sha2-384 prf hmac-sha2-256 prf hmac-sha1" .
+		    " prf hmac-md5 " .
+		    " noesn esn",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_invalid_ke {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "passive",
+		'ikesa' => "ikesa group curve25519",
+		'expect' => [
+		    "want dh CURVE25519, KE has ECP_256",
+		    "failed to negotiate IKE SA",
+		    "spi=0x[0-9a-f]{16}: established peer $right{'addr'}"
+		],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'ikesa' => "ikesa group ecp256 group curve25519",
+		'expect' => [
+		    "reinitiating with new DH group",
+		    "spi=0x[0-9a-f]{16}: established peer $left{'addr'}",
+		],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_config_addr {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "passive",
+		'config' => "config address 172.16.13.36",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'config' => "request address any",
+		'expect' => [
+		    "spi=0x[0-9a-f]{16}: established peer $left{'addr'}",
+		    "obtained lease: 172.16.13.36"
+		],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_config_addrpool {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "passive",
+		'config' => "config address 172.16.13.36/24",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'config' => "request address any",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_transport {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'tmode' => "transport",
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'tmode' => "transport",
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
 }
 
 sub test_fragmentation {
-	my $sub_name = (caller(0))[3];
 	my %lconf = (
 		'from' => $left{'addr'},
 		'to' => $right{'addr'},
 		'fragmentation' => 1,
 		'srcid' => "$left{'name'}-from-ca-both",
 		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
 	);
-	setup_config("$sub_name-left", \%lconf);
-	system("chmod 0600 $BUILDDIR/$sub_name-left.conf");
-	system <<~DOC;
-	echo "cd /tmp
-	put $BUILDDIR/$sub_name-left.conf test.conf" | sftp -q $left{'ssh'} -q;
-	DOC
-
 	my %rconf = (
 		'from' => $right{'addr'},
 		'to' => $left{'addr'},
 		'fragmentation' => 1,
 		'srcid' => "$right{'name'}-from-ca-both",
 		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
 	);
-	setup_config("$sub_name-right", \%rconf);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_singleikesa {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'singleikesa' => 1,
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'singleikesa' => 1,
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_lifetime {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "active",
+		'config' => "ikelifetime 30 lifetime 20 bytes 500K",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $right{'addr'}"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both",
+		'mode' => "active",
+		'config' => "ikelifetime 30 lifetime 20 bytes 500K",
+		'expect' => ["spi=0x[0-9a-f]{16}: established peer $left{'addr'}"],
+	);
+	# XXX: wait and check rekey log message
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_dstid_fail {
+	my %lconf = (
+		'from' => $left{'addr'},
+		'to' => $right{'addr'},
+		'srcid' => "$left{'name'}-from-ca-both",
+		'mode' => "active",
+		'expect' => ["spi=0x[0-9a-f]{16}: sa_free: authentication failed notification from peer"],
+	);
+	my %rconf = (
+		'from' => $right{'addr'},
+		'to' => $left{'addr'},
+		'srcid' => "$right{'name'}-from-ca-both",
+		'dstid' => "dstid INVALID_ID",
+		'mode' => "passive",
+		'expect' => ["spi=0x[0-9a-f]{16}: ikev2_ike_auth_recv: no compatible policy found"],
+	);
+	test_basic(\%lconf, \%rconf);
+}
+
+sub test_basic {
+	my ($lconf, $rconf) = @_;
+	my $sub_name = (caller(0))[3];
+	setup_config("$sub_name-left", $lconf);
+	system("chmod 0600 $BUILDDIR/$sub_name-left.conf");
+	system <<~DOC;
+	echo "rename $left{'etc_dir'}/iked.conf $left{'etc_dir'}/iked.conf.old
+	put $BUILDDIR/$sub_name-left.conf $left{'etc_dir'}/iked.conf" | sftp -q $left{'ssh'} -q > /dev/null;
+	DOC
+
+	setup_config("$sub_name-right", $rconf);
 	system("chmod 0600 $BUILDDIR/$sub_name-right.conf");
 	system <<~DOC;
-	echo "cd /tmp
-	put $BUILDDIR/$sub_name-right.conf test.conf" | sftp -q $right{'ssh'} -q;
+	echo "rename $right{'etc_dir'}/iked.conf $right{'etc_dir'}/iked.conf.old
+	put $BUILDDIR/$sub_name-right.conf $right{'etc_dir'}/iked.conf" | sftp -q $right{'ssh'} -q > /dev/null;
 	DOC
 
 	setup_start(\%left);
 	setup_start(\%right);
-	print "FAIL" if check_ping(\%left, \%right);
+
+	for (1..5) {
+		sleep(1);
+		if (check_log(\%left, $lconf->{'expect'}) &&
+		    check_log(\%right, $rconf->{'expect'})) {
+			print("SUCCESS\n");
+			return;
+		}
+	}
+	print("FAIL\n");
 }
 
 sub cleanup {
-	print("Cleaning up.\n");
 	setup_stop(\%left);
 	setup_stop(\%right);
-	system("ssh -q $left{'ssh'} \"rm /tmp/test.conf\" 2>/dev/null");
-	system("ssh -q $right{'ssh'} \"rm /tmp/test.conf\" 2>/dev/null");
+	system("ssh -q $left{'ssh'} \"mv $left{'etc_dir'}/iked.conf.old $left{'etc_dir'}/iked.conf; cat /tmp/test.log >> /tmp/iked-live.log; rm /tmp/test.log\" 2>/dev/null");
+	system("ssh -q $right{'ssh'} \"mv $right{'etc_dir'}/iked.conf.old $right{'etc_dir'}/iked.conf; cat /tmp/test.log >> /tmp/iked-live.log; rm /tmp/test.log\" 2>/dev/null");
 }
 
 sub setup_start {
 	my ($peer) = @_;
-	system("ssh -q $peer->{'ssh'} \"$peer->{'cmd_flush'}; pkill iked; ".
-	    "iked -df /tmp/test.conf\&\"\&");
+	system("ssh -q $peer->{'ssh'} \"$peer->{'cmd_flush'}; pkill iked; iked -dv 2> /tmp/test.log\&\"&")
 }
 
 sub setup_stop {
 	my ($peer) = @_;
-	system("ssh -q $peer->{'ssh'} \"$peer->{'cmd_flush'}; pkill iked;\" ".
-	    "2>/dev/null");
+	system("ssh -q $peer->{'ssh'} \"$peer->{'cmd_flush'}; pkill iked\"");
 }
 
 sub setup_ca {
@@ -255,13 +670,14 @@ sub setup_config {
 	print $dest "FROM=\"$conf->{'from'}\"\n";
 	print $dest "TO=\"$conf->{'to'}\"\n";
 	print $dest "PEER_ADDR=\"$conf->{'to'}\"\n";
+	print $dest "IKESA=\"$conf->{'ikesa'}\"\n";
 	print $dest "MODE=\"$conf->{'mode'}\"\n";
 	print $dest "TMODE=\"$conf->{'tmode'}\"\n";
 	print $dest "AUTH=\"$conf->{'auth'}\"\n";
 	print $dest "IPCOMP=\"$conf->{'ipcomp'}\"\n";
 	print $dest "SRCID=\"$conf->{'srcid'}\"\n";
 	print $dest "DSTID=\"$conf->{'dstid'}\"\n";
-	print $dest "CONFIG=\"\"\n";
+	print $dest "CONFIG=\"$conf->{'config'}\"\n";
 
 	print $dest "$globals";
 
@@ -273,23 +689,39 @@ sub setup_config {
 # XXX: needs less globals
 sub deploy_certs {
 	system <<~DOC;
-	echo "cd $left{'etc_dir'}\n
-	put $BUILDDIR/left-from-ca-both.crt certs\n
-	put $BUILDDIR/left-from-ca-right.crt certs\n
+	echo "cd $left{'etc_dir'}/iked\n
+	mkdir certs\n
+	put $BUILDDIR/left-from-ca-both.crt certs/\n
+	put $BUILDDIR/left-from-ca-right.crt certs/\n
+	put $BUILDDIR/left-from-ca-none.crt certs/\n
+	put $BUILDDIR/right-from-ca-none.crt certs/\n
+	mkdir private\n
 	put $BUILDDIR/left.key private/local.key\n
 	put $BUILDDIR/left.pub local.pub\n
-	put $BUILDDIR/ca-left.crt ca\n
-	put $BUILDDIR/ca-both.crt ca\n" | sftp -q $left{'ssh'} -q;
+	mkdir pubkeys\n
+	mkdir pubkeys/fqdn\n
+	put $BUILDDIR/right.pub pubkeys/fqdn/right-pub\n
+	mkdir ca\n
+	put $BUILDDIR/ca-left.crt ca/\n
+	put $BUILDDIR/ca-both.crt ca/\n" | sftp -q $left{'ssh'} -q > /dev/null;
 	DOC
 
 	system <<~"DOC";
-	echo "cd $right{'etc_dir'}\n
-	put $BUILDDIR/right-from-ca-both.crt certs\n
-	put $BUILDDIR/right-from-ca-right.crt certs\n
+	echo "cd $right{'etc_dir'}/iked\n
+	mkdir certs\n
+	put $BUILDDIR/right-from-ca-both.crt certs/\n
+	put $BUILDDIR/right-from-ca-left.crt certs/\n
+	put $BUILDDIR/right-from-ca-none.crt certs/\n
+	put $BUILDDIR/left-from-ca-none.crt certs/\n
+	mkdir private\n
 	put $BUILDDIR/right.key private/local.key\n
 	put $BUILDDIR/right.pub local.pub\n
-	put $BUILDDIR/ca-right.crt ca\n
-	put $BUILDDIR/ca-both.crt ca\n" | sftp -q $right{'ssh'} -q;
+	mkdir pubkeys\n
+	mkdir pubkeys/fqdn\n
+	put $BUILDDIR/left.pub pubkeys/fqdn/left-pub\n
+	mkdir ca\n
+	put $BUILDDIR/ca-right.crt ca/\n
+	put $BUILDDIR/ca-both.crt ca/\n" | sftp -q $right{'ssh'} -q > /dev/null;
 	DOC
 }
 
@@ -297,18 +729,27 @@ sub init_osdep {
 	my ($peer) = @_;
 
 	$peer->{'os'} = `ssh -q $peer->{'ssh'} uname`;
-	$peer->{'etc_dir'} = "/etc/iked";
-	if ($peer->{'os'} cmp "OpenBSD") {
+	$peer->{'etc_dir'} = "/etc";
+	if (($peer->{'os'} cmp "OpenBSD\n") == 0) {
 		$peer->{'cmd_flush'} = "ipsecctl -F";
-	} elsif ($peer->{'os'} cmp "Linux") {
+	} elsif (($peer->{'os'} cmp "Linux\n") == 0) {
 		$peer->{'cmd_flush'} = "ip x p f; ip x s f";
-	} elsif ($peer->{'os'} cmp "FreeBSD") {
-		$peer->{'cmd_flush'} = "setkey -PD; setkey -D";
-		$peer->{'etc_dir'} = "/usr/local/etc/iked";
+	} elsif (($peer->{'os'} cmp "FreeBSD\n") == 0) {
+		$peer->{'cmd_flush'} = "setkey -PF; setkey -F";
+		$peer->{'etc_dir'} = "/usr/local/etc";
 	} else {
-		print "error: unsupported OS " . $peer->{'os'} ."\n";
+		print("error: unsupported OS $peer->{'os'}\n");
 		exit 1;
 	}
+}
+
+sub check_log {
+	my ($peer, $res) = @_;
+	my $log = `ssh -q $peer->{'ssh'} \"cat /tmp/test.log\"`;
+	foreach my $regex (@$res) {
+		return 0 if !($log =~ /$regex/);
+	}
+	return 1;
 }
 
 sub check_ping {
@@ -324,9 +765,9 @@ sub check_ping {
 	my $rtol = ($out =~ /\(authentic,confidential\):\sSPI\s0x[0-9a-f]{8}:\s
 	    $left->{'addr'}\s>\s$right->{'addr'}/x);
 	if ($ltor && $rtol) {
-		print "Ping werks\n";
+		print("Ping werks\n");
 		return 0;
 	}
-	print "Ping failed\n";
+	print("Ping failed\n");
 	return 1;
 }
