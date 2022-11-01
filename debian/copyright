@@ -48,7 +48,7 @@ License: BSD-2-clause
 Files: compat/tree.h
        compat/sys/tree.h
 Copyright: 2002 Niels Provos <provos@citi.umich.edu>
-	   2016 David Gwynne <dlg@openbsd.org>
+           2016 David Gwynne <dlg@openbsd.org>
 License: BSD-2-clause and ISC
 
 Files: compat/setproctitle.c
