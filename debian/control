@@ -8,6 +8,8 @@ Build-Depends: bison,
                debhelper-compat (= 13),
                libevent-dev,
                libssl-dev,
+               libapparmor-dev,
+               dh-apparmor,
 Standards-Version: 4.6.0
 Homepage: https://www.openiked.org/
 Vcs-Browser: https://salsa.debian.org/debian/openiked
@@ -19,8 +21,10 @@ Architecture: any
 Pre-Depends: ${misc:Pre-Depends},
 Depends: adduser,
          openssl,
+         libapparmor1,
          ${misc:Depends},
          ${shlibs:Depends},
+Suggests: apparmor
 Description: Internet Key Exchange (IKEv2) daemon
  A free implementation of the Internet Key Exchange (IKEv2) protocol
  which performs mutual authentication and which establishes and maintains
