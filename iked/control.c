@@ -55,10 +55,10 @@ static struct privsep_proc procs[] = {
 	{ "ca",		PROC_CERT, control_dispatch_ca },
 };
 
-pid_t
+void
 control(struct privsep *ps, struct privsep_proc *p)
 {
-	return (proc_run(ps, p, procs, nitems(procs), control_run, NULL));
+	proc_run(ps, p, procs, nitems(procs), control_run, NULL);
 }
 
 void
@@ -69,7 +69,7 @@ control_run(struct privsep *ps, struct privsep_proc *p, void *arg)
 	 * stdio - for malloc and basic I/O including events.
 	 * unix - for the control socket.
 	 */
-	if (pledge("stdio unix", NULL) == -1)
+	if (pledge("stdio unix recvfd", NULL) == -1)
 		fatal("pledge");
 }
 

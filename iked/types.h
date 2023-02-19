@@ -131,7 +131,8 @@ enum imsg_type {
 	IMSG_PRIVKEY,
 	IMSG_PUBKEY,
 	IMSG_CTL_SHOW_CERTSTORE,
-	IMSG_CTL_SHOW_STATS
+	IMSG_CTL_SHOW_STATS,
+	IMSG_CTL_PROCFD,
 };
 
 enum privsep_procid {
