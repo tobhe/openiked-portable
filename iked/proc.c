@@ -543,28 +543,6 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	else
 		pw = ps->ps_pw;
 
-#ifdef WITH_APPARMOR
-	switch(p->p_id) {
-	case PROC_IKEV2:
-		if (aa_change_profile("iked//ikev2") == -1)
-			log_warnx("warning: aa_change_profile"
-			    "(\"iked//ikev2\") failed");
-		break;
-	case PROC_CONTROL:
-		if (aa_change_profile("iked//control") == -1)
-			log_warnx("warning: aa_change_profile"
-			    "(\"iked//control\") failed");
-		break;
-	case PROC_CERT:
-		if (aa_change_profile("iked//ca") == -1)
-			log_warnx("warning: aa_change_profile"
-			    "(\"iked//ca\") failed");
-		break;
-	default:
-		break;
-	}
-#endif
-
 	/* Change root directory */
 	if (p->p_chroot != NULL)
 		root = p->p_chroot;
