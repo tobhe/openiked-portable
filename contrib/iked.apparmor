@@ -49,6 +49,7 @@ profile iked /usr/sbin/iked {
   change_profile -> iked//ca,
   change_profile -> iked//control,
   change_profile -> iked//ikev2,
+  /usr/sbin/iked ix,
 
   signal (send) peer=iked//ca,
   signal (send) peer=iked//control,
@@ -58,13 +59,14 @@ profile iked /usr/sbin/iked {
   owner /run/iked.sock w,
   network key raw,
 
+  # priv dropping
+  capability setuid,
+  capability setgid,
+  capability sys_chroot,
+
   profile ca {
     include <abstractions/base>
 
-    # privsep
-    capability setuid,
-    capability setgid,
-    capability sys_chroot,
     signal (receive) peer=iked,
 
     # certs/keys
@@ -74,10 +76,6 @@ profile iked /usr/sbin/iked {
   profile control {
     include <abstractions/base>
 
-    # privsep
-    capability setuid,
-    capability setgid,
-    capability sys_chroot,
     signal (receive) peer=iked,
 
     # ikectl control sock
@@ -88,9 +86,6 @@ profile iked /usr/sbin/iked {
     include <abstractions/base>
 
     # privsep
-    capability setuid,
-    capability setgid,
-    capability sys_chroot,
     signal (receive) peer=iked,
 
     # IKEv2
